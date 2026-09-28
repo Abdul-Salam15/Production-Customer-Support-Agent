@@ -6,7 +6,8 @@
     "apps/mcp-server"
   ],
   "scripts": {
-    "seed": "tsx supabase/seed/load-seed.ts"
+    "seed": "tsx supabase/seed/load-seed.ts",
+    "ingest-kb": "tsx scripts/ingest-knowledge-base.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

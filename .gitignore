@@ -5,3 +5,4 @@ dist/
 apps/agent/.env
 apps/mcp-server/.env
 *.log
+supabase/.temp/
