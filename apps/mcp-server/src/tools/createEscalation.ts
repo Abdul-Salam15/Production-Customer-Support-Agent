@@ -1,2 +1,143 @@
-// Placeholder — create_escalation tool. Implemented in Phase 3.6 / Stage 5.
-export {};
+import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { getSupabaseClient } from "../lib/supabaseClient.js";
+import { getVerifiedCustomerId } from "../lib/verification.js";
+import { withLogging, type ToolContext } from "../lib/withLogging.js";
+import { generateUniqueReference } from "./createSupportTicket.js";
+
+const CATEGORY_PRIORITY: Record<string, "high" | "medium" | "low"> = {
+  compliance: "high",
+  account: "high",
+  dispute: "high",
+  payment: "medium",
+  other: "low",
+};
+
+const inputShape = {
+  ticket_id: z.string().optional(),
+  customer_id: z.string().optional(),
+  conversation_id: z.string().optional(),
+  user_name: z.string(),
+  user_email: z.string(),
+  category: z.enum(["compliance", "account", "dispute", "payment", "other"]),
+  reason: z.string(),
+  preferred_time: z.string().optional(),
+};
+
+type CreateEscalationArgs = {
+  ticket_id?: string;
+  customer_id?: string;
+  conversation_id?: string;
+  user_name: string;
+  user_email: string;
+  category: "compliance" | "account" | "dispute" | "payment" | "other";
+  reason: string;
+  preferred_time?: string;
+};
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function escalationIdExists(supabase: SupabaseClient, candidate: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("escalations")
+    .select("escalation_id")
+    .eq("escalation_id", candidate)
+    .maybeSingle();
+  return data !== null;
+}
+
+// Stub for Phase 4.5's contact-form submission storage, which does not exist
+// yet at this stage (that's the agent backend's contact-details endpoint).
+// Once built, this reads the stored { name, email } for the conversation.
+async function getStoredContactSubmission(
+  _supabase: SupabaseClient,
+  _conversationId: string | null
+): Promise<{ name: string; email: string } | null> {
+  return null;
+}
+
+async function resolveContactDetails(
+  supabase: SupabaseClient,
+  args: CreateEscalationArgs,
+  conversationId: string | null
+): Promise<{ userName: string; userEmail: string }> {
+  // A value the customer typed and the server stored is authoritative; a
+  // value the model transcribed from speech is not.
+  const stored = await getStoredContactSubmission(supabase, conversationId);
+  if (stored) {
+    return { userName: stored.name, userEmail: stored.email };
+  }
+
+  const verifiedCustomerId = await getVerifiedCustomerId(supabase, conversationId);
+  if (verifiedCustomerId) {
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("contact_name, contact_email")
+      .eq("customer_id", verifiedCustomerId)
+      .maybeSingle();
+
+    if (customer) {
+      return {
+        userName: args.user_name || customer.contact_name,
+        userEmail: customer.contact_email,
+      };
+    }
+  }
+
+  return { userName: args.user_name, userEmail: args.user_email };
+}
+
+async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
+  const supabase = getSupabaseClient();
+  const conversationId = ctx.conversationId ?? args.conversation_id ?? null;
+
+  const { userName, userEmail } = await resolveContactDetails(supabase, args, conversationId);
+
+  if (!userName || userName.trim().length === 0) {
+    return { status: "invalid", error: "missing_name" };
+  }
+  if (!EMAIL_RE.test(userEmail)) {
+    return { status: "invalid", error: "invalid_email" };
+  }
+
+  const priority = CATEGORY_PRIORITY[args.category];
+
+  const escalationId = args.ticket_id
+    ? args.ticket_id
+    : await generateUniqueReference((candidate) => escalationIdExists(supabase, candidate));
+
+  const { error } = await supabase.from("escalations").insert({
+    escalation_id: escalationId,
+    ticket_id: args.ticket_id ?? null,
+    conversation_id: conversationId,
+    customer_id: args.customer_id ?? null,
+    user_name: userName,
+    user_email: userEmail,
+    category: args.category,
+    reason: args.reason,
+    preferred_time: args.preferred_time ?? null,
+    priority,
+    status: "open",
+  });
+
+  if (error) throw new Error(`escalations insert failed: ${error.message}`);
+
+  return {
+    escalation_id: escalationId,
+    status: "open",
+    follow_up_summary: `A ${priority}-priority ${args.category} escalation has been created and a specialist will follow up.`,
+  };
+}
+
+export function registerCreateEscalation(server: McpServer): void {
+  server.registerTool(
+    "create_escalation",
+    {
+      title: "Create Escalation",
+      description: "Escalate a request that requires human support. Priority is derived from category, not model-chosen.",
+      inputSchema: inputShape,
+    },
+    withLogging("create_escalation", "Escalate a request that requires human support", handle)
+  );
+}

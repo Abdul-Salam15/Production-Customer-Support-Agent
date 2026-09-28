@@ -12,12 +12,22 @@ import { bearerAuth } from "./auth.js";
 import { registerLookupCustomer } from "./tools/lookupCustomer.js";
 import { registerLookupTransaction } from "./tools/lookupTransaction.js";
 import { registerLookupPayout } from "./tools/lookupPayout.js";
+import { registerSearchKnowledgeBase } from "./tools/searchKnowledgeBase.js";
+import { registerCreateSupportTicket } from "./tools/createSupportTicket.js";
+import { registerCreateEscalation } from "./tools/createEscalation.js";
+import { registerRequestContactDetails } from "./tools/requestContactDetails.js";
+import { registerLogConversationEvent } from "./tools/logConversationEvent.js";
 
 function buildServer(): McpServer {
   const server = new McpServer({ name: "relaypay-mcp-server", version: "0.1.0" });
   registerLookupCustomer(server);
   registerLookupTransaction(server);
   registerLookupPayout(server);
+  registerSearchKnowledgeBase(server);
+  registerCreateSupportTicket(server);
+  registerCreateEscalation(server);
+  registerRequestContactDetails(server);
+  registerLogConversationEvent(server);
   return server;
 }
 
