@@ -1,0 +1,626 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice support · RelayPay</title>
+<meta name="description" content="Talk to RelayPay support. Ask about fees, payouts, invoicing and verification, or have a transaction checked.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip-link" href="#call-panel">Skip to voice call</a>
+
+<!-- 1. Header -->
+<header class="site-header">
+  <div class="container site-header__inner">
+    <div class="site-header__brand">
+      <a class="wordmark" href="/">RelayPay</a>
+      <span class="site-header__label">Support</span>
+    </div>
+    <div class="site-header__nav">
+      <a class="site-header__link" href="#how-this-works">How this works</a>
+      <div class="site-header__account" data-account-out>
+        <a class="site-header__auth-link" href="#login">Log in</a>
+        <a class="site-header__auth-link" href="#signup">Sign up</a>
+      </div>
+      <div class="site-header__account site-header__account--in" data-account-in hidden>
+        <span class="site-header__who"><span class="site-header__name" data-account-name>Amara</span><span class="site-header__count tabular" data-account-count>4 calls</span></span>
+        <a class="site-header__auth-link" href="#history">Call history</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <!-- 2. Hero -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="container hero__grid">
+      <div class="hero__intro">
+        <h1 class="hero__title" id="hero-title">Talk to RelayPay support</h1>
+        <p class="hero__lede">Our voice agent answers questions about fees, payouts, invoicing and verification, checks a transaction or payout when you share its reference, and connects you to a specialist when needed.</p>
+      </div>
+
+      <div class="hero__visual" aria-hidden="true">
+        <div class="globe" data-globe>
+          <div class="globe__canvas" data-globe-canvas></div>
+          <!-- Static fallback: shown when WebGL/Three.js is unavailable -->
+          <svg class="globe__fallback" viewBox="0 0 240 240" fill="none" stroke="#0E2A47" stroke-width="0.6">
+            <circle cx="120" cy="120" r="100" stroke-opacity="0.5"/>
+            <ellipse cx="120" cy="120" rx="87" ry="100" stroke-opacity="0.2"/>
+            <ellipse cx="120" cy="120" rx="50" ry="100" stroke-opacity="0.2"/>
+            <line x1="120" y1="20" x2="120" y2="220" stroke-opacity="0.2"/>
+            <line x1="20" y1="120" x2="220" y2="120" stroke-opacity="0.3"/>
+            <line x1="26" y1="86" x2="214" y2="86" stroke-opacity="0.2"/>
+            <line x1="26" y1="154" x2="214" y2="154" stroke-opacity="0.2"/>
+            <line x1="43" y1="56" x2="197" y2="56" stroke-opacity="0.2"/>
+            <line x1="43" y1="184" x2="197" y2="184" stroke-opacity="0.2"/>
+            <line x1="70" y1="33" x2="170" y2="33" stroke-opacity="0.2"/>
+            <line x1="70" y1="207" x2="170" y2="207" stroke-opacity="0.2"/>
+            <path d="M112 108 Q110 70 116 44" stroke-opacity="0.7"/>
+            <path d="M112 108 Q150 96 172 122" stroke-opacity="0.7"/>
+            <path d="M136 176 Q120 110 116 44" stroke-opacity="0.7"/>
+            <path d="M101 110 Q106 104 112 108" stroke-opacity="0.7"/>
+            <path d="M163 124 Q168 120 172 122" stroke-opacity="0.7"/>
+            <g fill="#0E2A47" stroke="none">
+              <circle cx="112" cy="108" r="2"/><circle cx="101" cy="110" r="2"/><circle cx="172" cy="122" r="2"/>
+              <circle cx="163" cy="124" r="2"/><circle cx="136" cy="176" r="2"/><circle cx="116" cy="44" r="2"/>
+            </g>
+          </svg>
+        </div>
+        <p class="globe__caption">
+          <span class="globe__caption-label">Payment corridors</span>
+          <span>Lagos, Nairobi, Accra, Cape Town, Kigali, London, New York</span>
+        </p>
+      </div>
+
+      <!-- 3. Call panel -->
+      <div class="hero__panel">
+        <section class="call-panel call-panel--idle" id="call-panel" aria-label="Voice call" data-call-panel>
+
+          <!-- A. Idle -->
+          <div class="call-state call-state--idle" data-state="idle" data-review-label="A · Idle">
+            <div class="call-panel__idle-head">
+              <h2 class="call-panel__idle-title" tabindex="-1" data-state-heading>Voice call</h2>
+              <span class="call-panel__idle-meta">Uses your microphone</span>
+            </div>
+            <button class="btn btn--primary btn--block" type="button" data-action="start-call">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>
+              Start voice call
+            </button>
+            <p class="call-state__note">You'll be speaking with an AI agent. Calls are recorded.</p>
+          </div>
+
+          <!-- B. Requesting microphone -->
+          <div class="call-state call-state--requesting" data-state="requesting" data-review-label="B · Requesting microphone" hidden>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>Allow microphone access</h2>
+            <p class="call-state__text">Your browser is asking to use your microphone. Choose Allow to start the call.</p>
+            <div class="mic-prompt">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>
+              Look for the prompt near the address bar.
+            </div>
+            <div class="call-state__actions">
+              <button class="btn btn--secondary" type="button" data-action="cancel">Cancel</button>
+            </div>
+          </div>
+
+          <!-- C. Microphone blocked -->
+          <div class="call-state call-state--blocked" data-state="blocked" data-review-label="C · Microphone blocked" hidden>
+            <p class="call-state__eyebrow call-state__eyebrow--caution">Microphone unavailable</p>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>Microphone access is blocked</h2>
+            <p class="call-state__text">We need your microphone to connect the call. To turn it back on:</p>
+            <ol class="call-state__steps">
+              <li>Select the site settings icon to the left of the address bar.</li>
+              <li>Set Microphone to Allow for this site.</li>
+              <li>Come back here and select Try again.</li>
+            </ol>
+            <div class="call-state__actions">
+              <button class="btn btn--primary" type="button" data-action="start-call">Try again</button>
+            </div>
+          </div>
+
+          <!-- D. Connecting -->
+          <div class="call-state call-state--connecting" data-state="connecting" data-review-label="D · Connecting" hidden>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>Connecting you to RelayPay support</h2>
+            <p class="call-state__text">This usually takes a few seconds.</p>
+            <div class="progress-line" role="progressbar" aria-label="Connecting"><span class="progress-line__bar"></span></div>
+            <div class="call-state__actions">
+              <button class="btn btn--secondary" type="button" data-action="cancel">Cancel</button>
+            </div>
+          </div>
+
+          <!-- E. Live call -->
+          <div class="call-state call-state--live" data-state="live" data-review-label="E · Live call (F activity line, G outcome cards, K contact form)" hidden>
+            <h2 class="sr-only" tabindex="-1" data-state-heading>Call in progress</h2>
+            <div class="live-bar">
+              <p class="live-status" data-live-status>
+                <span class="live-status__dot" aria-hidden="true"></span>
+                <span class="live-status__text" data-live-status-text>Listening</span>
+                <span class="live-status__muted" data-muted-label hidden>· Muted</span>
+              </p>
+              <p class="call-timer"><span class="sr-only">Call duration</span><span class="call-timer__value tabular" data-call-timer>01:24</span></p>
+            </div>
+
+            <canvas class="audio-level" data-audio-level aria-hidden="true"></canvas>
+
+            <!-- F. Activity line -->
+            <p class="activity-line" data-activity-line hidden>
+              <span class="activity-line__indicator" aria-hidden="true"></span>
+              <span class="activity-line__text" data-activity-text>Checking transaction records</span>
+            </p>
+
+            <div class="captions" aria-live="polite" aria-label="Live captions">
+              <div class="caption caption--you">
+                <span class="caption__speaker">You</span>
+                <p class="caption__text" data-caption="you">Yes, please. Tomorrow morning, between ten and twelve.</p>
+              </div>
+              <div class="caption caption--agent">
+                <span class="caption__speaker">RelayPay</span>
+                <p class="caption__text" data-caption="agent">What name and email should the specialist use?</p>
+              </div>
+            </div>
+            <button class="btn btn--text transcript-toggle" type="button" data-action="open-transcript" aria-controls="transcript-drawer" aria-expanded="false">Show full transcript</button>
+
+            <!-- K. Contact details form (shown during live call; call stays live) -->
+            <section class="contact-form" data-contact-form aria-labelledby="contact-form-title" hidden>
+              <form class="contact-form__form" data-contact-form-form novalidate>
+                <h3 class="contact-form__title" id="contact-form-title" tabindex="-1">Specialist callback</h3>
+                <p class="contact-form__intro">A specialist will follow up. Add your details below, or say them aloud.</p>
+
+                <div class="field" data-field="name">
+                  <label class="field__label" for="cf-name">Full name</label>
+                  <input class="field__input" id="cf-name" name="name" type="text" autocomplete="name" aria-describedby="cf-name-error" required>
+                  <p class="field__error" id="cf-name-error" hidden></p>
+                </div>
+
+                <!-- Verified-caller variant -->
+                <div class="contact-form__on-file" data-email-on-file hidden>
+                  <p class="field__label">Email</p>
+                  <p class="contact-form__on-file-text">We'll contact you at the email on file for LagosLedger: <span class="contact-form__masked">am***@lagosledger.example</span></p>
+                  <button class="btn btn--text contact-form__change" type="button" data-action="use-different-email">Use a different email</button>
+                </div>
+
+                <div class="field" data-field="email">
+                  <label class="field__label" for="cf-email">Work email</label>
+                  <input class="field__input" id="cf-email" name="email" type="email" autocomplete="email" inputmode="email" aria-describedby="cf-email-error" required>
+                  <p class="field__error" id="cf-email-error" hidden></p>
+                </div>
+
+                <fieldset class="field field--group" data-field="when" aria-describedby="cf-when-error">
+                  <legend class="field__label">Preferred callback time</legend>
+                  <div class="contact-form__when">
+                    <div class="contact-form__when-part">
+                      <label class="field__sublabel" for="cf-date">Date</label>
+                      <input class="field__input tabular" id="cf-date" name="date" type="date" required>
+                    </div>
+                    <div class="contact-form__when-part">
+                      <label class="field__sublabel" for="cf-time">Time</label>
+                      <input class="field__input tabular" id="cf-time" name="time" type="time" step="900" required>
+                    </div>
+                    <div class="contact-form__when-part contact-form__when-part--tz">
+                      <label class="field__sublabel" for="cf-tz">Time zone</label>
+                      <select class="field__input field__select" id="cf-tz" name="tz">
+                        <option value="Africa/Lagos" data-abbr="WAT">Lagos (WAT, UTC+1)</option>
+                        <option value="Africa/Nairobi" data-abbr="EAT">Nairobi (EAT, UTC+3)</option>
+                        <option value="Africa/Accra" data-abbr="GMT">Accra (GMT, UTC+0)</option>
+                        <option value="Africa/Johannesburg" data-abbr="SAST">Johannesburg (SAST, UTC+2)</option>
+                        <option value="Africa/Kigali" data-abbr="CAT">Kigali (CAT, UTC+2)</option>
+                        <option value="Europe/London" data-abbr="UK time">London (UK time)</option>
+                        <option value="America/New_York" data-abbr="ET">New York (ET)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p class="field__hint" data-tz-hint>Detected from your browser. Change it if you'll be elsewhere.</p>
+                  <p class="field__error" id="cf-when-error" hidden></p>
+                </fieldset>
+
+                <div class="field" data-field="notes">
+                  <label class="field__label" for="cf-notes">Anything else we should know <span class="field__optional">(optional)</span></label>
+                  <input class="field__input" id="cf-notes" name="notes" type="text" maxlength="200">
+                </div>
+
+                <div class="contact-form__actions">
+                  <button class="btn btn--primary" type="submit">Send details</button>
+                  <button class="btn btn--text" type="button" data-action="say-instead">I'll say it instead</button>
+                </div>
+              </form>
+
+              <div class="contact-form__done" data-contact-form-done role="status" hidden>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+                <span>Details received</span>
+              </div>
+            </section>
+
+            <!-- G. Outcome cards (source of truth; cloned into ended/error states) -->
+            <div class="outcomes outcomes--live" data-outcomes-source>
+              <div class="outcome-card outcome-card--verified" data-outcome="verified">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+                <p class="outcome-card__summary">Verified: LagosLedger</p>
+              </div>
+              <!-- G4. Transaction / payout status (rendered by app.js from STATUS_CARDS; always above the callback card) -->
+              <div class="outcome-group" data-outcome="status" data-status-cards></div>
+              <div class="outcome-card outcome-card--ticket" data-outcome="ticket">
+                <div class="outcome-card__head">
+                  <span class="outcome-card__type">Support ticket created</span>
+                  <span class="outcome-card__ref tabular">RP-4821</span>
+                </div>
+                <p class="outcome-card__summary">Payout TXN-9001 to a supplier in Nairobi delayed beyond two business days.</p>
+                <p class="outcome-card__foot">Our support team will follow up.</p>
+              </div>
+              <div class="outcome-card outcome-card--callback" data-outcome="callback">
+                <div class="outcome-card__head">
+                  <span class="outcome-card__type">Specialist callback arranged</span>
+                  <span class="outcome-card__ref tabular">RP-4822</span>
+                </div>
+                <dl class="outcome-card__details">
+                  <dt>Name</dt><dd data-callback-name>Amara Okafor</dd>
+                  <dt>Email</dt><dd data-callback-email>am***@lagosledger.example</dd>
+                  <dt>Callback time</dt><dd class="tabular" data-callback-time>Mon 28 Sep, 10:00 WAT</dd>
+                </dl>
+                <p class="outcome-card__foot">A RelayPay specialist will contact you.</p>
+              </div>
+            </div>
+
+            <div class="call-controls">
+              <button class="btn btn--secondary call-controls__mute" type="button" data-action="toggle-mute" aria-pressed="false">
+                <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>
+                <svg data-icon="mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" hidden><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M4 4l16 16"/></svg>
+                <span data-mute-label>Mute</span>
+              </button>
+              <button class="btn btn--end call-controls__end" type="button" data-action="end-call">End call</button>
+            </div>
+          </div>
+
+          <!-- I. Call ended -->
+          <div class="call-state call-state--ended" data-state="ended" data-review-label="I · Call ended" hidden>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>Call ended</h2>
+            <p class="call-state__text">Thanks for calling RelayPay support.</p>
+            <dl class="call-summary">
+              <div><dt>Duration</dt><dd class="tabular" data-summary-duration>06:48</dd></div>
+              <div><dt>Ended</dt><dd class="tabular" data-summary-ended>14:09 WAT</dd></div>
+            </dl>
+            <p class="call-refs-label" data-refs-label>References from this call</p>
+            <div class="outcomes" data-outcomes-slot></div>
+            <div class="next-steps">
+              <p class="next-steps__label">What happens next</p>
+              <p class="next-steps__text">We've emailed a summary to the address on your account. Keep your references handy if you contact us again.</p>
+            </div>
+            <div class="call-state__actions">
+              <button class="btn btn--primary" type="button" data-action="start-call">Start a new call</button>
+              <button class="btn btn--text" type="button" data-action="open-transcript" aria-controls="transcript-drawer" aria-expanded="false">Show full transcript</button>
+            </div>
+          </div>
+
+          <!-- J1. Connection failed -->
+          <div class="call-state call-state--error call-state--connection-failed" data-state="error-connection" data-review-label="J · Connection failed" hidden>
+            <p class="call-state__eyebrow call-state__eyebrow--error">Connection error</p>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>We couldn't connect the call.</h2>
+            <p class="call-state__text">Check your internet connection, then try again.</p>
+            <div class="call-state__actions">
+              <button class="btn btn--primary" type="button" data-action="start-call">Try again</button>
+            </div>
+          </div>
+
+          <!-- J2. Call dropped -->
+          <div class="call-state call-state--error call-state--dropped" data-state="error-dropped" data-review-label="J · Call dropped" hidden>
+            <p class="call-state__eyebrow call-state__eyebrow--error">Call interrupted</p>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>The call dropped.</h2>
+            <p class="call-state__text">Your connection was lost. Anything already arranged on this call is saved.</p>
+            <p class="call-refs-label" data-refs-label>References from this call</p>
+            <div class="outcomes" data-outcomes-slot></div>
+            <div class="call-state__actions">
+              <button class="btn btn--primary" type="button" data-action="start-call">Start a new call</button>
+            </div>
+          </div>
+
+          <!-- J3. Service busy -->
+          <div class="call-state call-state--error call-state--busy" data-state="error-busy" data-review-label="J · Service busy" hidden>
+            <p class="call-state__eyebrow call-state__eyebrow--caution">High demand</p>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>Voice support is busy right now.</h2>
+            <p class="call-state__text">Please try again in a few minutes.</p>
+            <div class="call-state__actions">
+              <button class="btn btn--primary" type="button" data-action="start-call">Try again</button>
+            </div>
+          </div>
+
+          <!-- J4. Time limit -->
+          <div class="call-state call-state--error call-state--time-limit" data-state="error-limit" data-review-label="J · Time limit reached" hidden>
+            <p class="call-state__eyebrow">Call ended · <span class="tabular">20:00</span></p>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>This call has reached its time limit.</h2>
+            <p class="call-state__text">Your references are saved below. Start a new call if you need more help.</p>
+            <p class="call-refs-label" data-refs-label>References from this call</p>
+            <div class="outcomes" data-outcomes-slot></div>
+            <div class="call-state__actions">
+              <button class="btn btn--primary" type="button" data-action="start-call">Start a new call</button>
+            </div>
+          </div>
+
+          <!-- J5. Browser not supported -->
+          <div class="call-state call-state--error call-state--unsupported" data-state="error-unsupported" data-review-label="J · Browser not supported" hidden>
+            <p class="call-state__eyebrow call-state__eyebrow--caution">Browser not supported</p>
+            <h2 class="call-state__title" tabindex="-1" data-state-heading>Voice calls don't work in this browser.</h2>
+            <p class="call-state__text">Open this page in a current version of Chrome, Edge, Safari, or Firefox.</p>
+            <div class="call-state__actions">
+              <button class="btn btn--secondary" type="button" data-action="copy-link"><span data-copy-label>Copy page link</span></button>
+            </div>
+          </div>
+
+        </section>
+        <p class="sr-only" aria-live="polite" data-announcer></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Try asking -->
+  <section class="section section--try" aria-labelledby="try-title">
+    <div class="container section__grid">
+      <h2 class="section__label" id="try-title">Try asking</h2>
+      <div class="section__body try-asking">
+        <div class="try-asking__list">
+          <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>What fees do you charge for international payments?<span class="try-asking__item-action">Say this</span></button>
+          <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>How long do payouts take?<span class="try-asking__item-action">Say this</span></button>
+          <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>Can you check transaction <span class="tabular">TXN-9001</span>?<span class="try-asking__item-action">Say this</span></button>
+          <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>Why would my account be under review?<span class="try-asking__item-action">Say this</span></button>
+        </div>
+        <p class="try-asking__hint" aria-live="polite" data-suggestion-hint>Select a question to see how to phrase it. You can use your own words on the call.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. How this works -->
+  <section class="section section--how" id="how-this-works" aria-labelledby="how-title">
+    <div class="container section__grid">
+      <h2 class="section__label" id="how-title">How this works</h2>
+      <div class="section__body">
+        <ol class="how-steps">
+          <li class="how-steps__item">
+            <span class="how-steps__num tabular">01</span>
+            <h3 class="how-steps__title">You speak</h3>
+            <p class="how-steps__text">Describe what you need. Share a transaction or payout reference if you have one.</p>
+          </li>
+          <li class="how-steps__item">
+            <span class="how-steps__num tabular">02</span>
+            <h3 class="how-steps__title">The agent checks</h3>
+            <p class="how-steps__text">It looks up approved RelayPay help content, or your records once your account is verified.</p>
+          </li>
+          <li class="how-steps__item">
+            <span class="how-steps__num tabular">03</span>
+            <h3 class="how-steps__title">You get an answer</h3>
+            <p class="how-steps__text">It answers directly, or connects you to a RelayPay specialist.</p>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. Specialist handover -->
+  <section class="section section--handover" aria-labelledby="handover-title">
+    <div class="container section__grid">
+      <h2 class="section__label" id="handover-title">When a specialist takes over</h2>
+      <div class="section__body">
+        <p>Some requests are always handled by people: account restrictions, compliance reviews, disputes, refunds, and cancellations. For these, the agent will take your name, email, and preferred callback time, and give you a reference. A RelayPay specialist will then contact you.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. Privacy -->
+  <section class="section section--privacy" aria-labelledby="privacy-title">
+    <div class="container section__grid">
+      <h2 class="section__label" id="privacy-title">Privacy</h2>
+      <div class="section__body">
+        <ul class="privacy-note">
+          <li>You are speaking with an AI agent, not a person.</li>
+          <li>Calls are recorded and logged for quality and support follow-up.</li>
+          <li>The agent will never read out sensitive account details, and will never ask for your password or card numbers.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Customer: Log in -->
+<main class="account-view" data-view="login" aria-labelledby="cl-title" hidden>
+  <div class="container account-view__inner">
+    <div class="account-panel">
+      <h1 class="account-panel__title" id="cl-title" tabindex="-1" data-view-heading>Log in</h1>
+      <p class="account-panel__text">See your past calls and their status. You don't need an account to call.</p>
+      <form class="account-form" data-customer-login novalidate>
+        <p class="account-form__error" role="alert" data-cl-error hidden>That email or password isn't right.</p>
+        <div class="field" data-field="email">
+          <label class="field__label" for="cl-email">Email</label>
+          <input class="field__input" id="cl-email" type="email" autocomplete="username" aria-describedby="cl-email-error">
+          <p class="field__error" id="cl-email-error" hidden></p>
+        </div>
+        <div class="field" data-field="password">
+          <label class="field__label" for="cl-password">Password</label>
+          <input class="field__input" id="cl-password" type="password" autocomplete="current-password" aria-describedby="cl-password-error">
+          <p class="field__error" id="cl-password-error" hidden></p>
+        </div>
+        <button class="btn btn--primary btn--block" type="submit">Log in</button>
+      </form>
+      <p class="account-panel__alt">No account? <a href="#signup">Sign up</a></p>
+      <p class="account-panel__proto">Prototype: log in as amara@lagosledger.example with the password relaypay-demo.</p>
+    </div>
+  </div>
+</main>
+
+<!-- Customer: Sign up -->
+<main class="account-view" data-view="signup" aria-labelledby="cs-title" hidden>
+  <div class="container account-view__inner">
+    <div class="account-panel">
+      <h1 class="account-panel__title" id="cs-title" tabindex="-1" data-view-heading>Create an account</h1>
+      <p class="account-panel__text">Keep track of your calls with RelayPay support.</p>
+      <form class="account-form" data-customer-signup novalidate>
+        <div class="field" data-field="name">
+          <label class="field__label" for="cs-name">Full name</label>
+          <input class="field__input" id="cs-name" type="text" autocomplete="name" aria-describedby="cs-name-error">
+          <p class="field__error" id="cs-name-error" hidden></p>
+        </div>
+        <div class="field" data-field="email">
+          <label class="field__label" for="cs-email">Email</label>
+          <input class="field__input" id="cs-email" type="email" autocomplete="email" aria-describedby="cs-email-error">
+          <p class="field__error" id="cs-email-error" hidden></p>
+        </div>
+        <div class="field" data-field="password">
+          <label class="field__label" for="cs-password">Password</label>
+          <input class="field__input" id="cs-password" type="password" autocomplete="new-password" aria-describedby="cs-password-hint cs-password-error">
+          <p class="field__hint" id="cs-password-hint">At least 8 characters.</p>
+          <p class="field__error" id="cs-password-error" hidden></p>
+        </div>
+        <div class="field" data-field="confirm">
+          <label class="field__label" for="cs-confirm">Confirm password</label>
+          <input class="field__input" id="cs-confirm" type="password" autocomplete="new-password" aria-describedby="cs-confirm-error">
+          <p class="field__error" id="cs-confirm-error" hidden></p>
+        </div>
+        <button class="btn btn--primary btn--block" type="submit">Create account</button>
+      </form>
+      <p class="account-panel__alt">Already have an account? <a href="#login">Log in</a></p>
+    </div>
+  </div>
+</main>
+
+<!-- Customer: Call history -->
+<main class="account-view account-view--history" data-view="history" aria-labelledby="ch-title" hidden>
+  <div class="container history">
+    <a class="history__back" href="#">Back to voice support</a>
+    <h1 class="history__title" id="ch-title" tabindex="-1" data-view-heading>Call history</h1>
+    <p class="history__text">Your calls with RelayPay support, most recent first.</p>
+    <ol class="history-list" data-history-list></ol>
+    <p class="history__empty" data-history-empty hidden>No calls yet. Calls you make while logged in will show here.</p>
+  </div>
+</main>
+
+<!-- 8. Footer -->
+<footer class="site-footer">
+  <div class="container site-footer__inner">
+    <div class="site-footer__brand">
+      <span class="wordmark">RelayPay</span>
+      <span>Support</span>
+    </div>
+    <div class="site-footer__policy">
+      <span>Responses follow RelayPay's published support policies.</span>
+      <span>© 2026 RelayPay. All rights reserved.</span>
+    </div>
+  </div>
+</footer>
+
+<!-- H. Transcript drawer -->
+<div class="drawer-scrim" data-drawer-scrim></div>
+<aside class="transcript-drawer" id="transcript-drawer" role="dialog" aria-modal="true" aria-labelledby="transcript-title" data-transcript-drawer>
+  <div class="transcript-drawer__head">
+    <div>
+      <h2 class="transcript-drawer__title" id="transcript-title">Transcript</h2>
+      <p class="transcript-drawer__meta">Call started <span class="tabular">14:02 WAT</span> · Recorded</p>
+    </div>
+    <button class="icon-btn" type="button" data-action="close-transcript" aria-label="Close transcript">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div class="transcript-drawer__body">
+    <ol class="transcript-list" data-transcript-list></ol>
+  </div>
+  <p class="transcript-drawer__foot">Sensitive details are never read out on calls.</p>
+</aside>
+
+<!-- ======================================================================
+     Design review tool — remove before production
+     ====================================================================== -->
+<div class="review-toolbar" data-review-toolbar role="region" aria-label="Preview states (design review tool)">
+  <div class="review-toolbar__head">
+    <div>
+      <div class="review-toolbar__title">Preview states</div>
+      <div class="review-toolbar__sub">Design review tool · not part of the product</div>
+    </div>
+    <button class="review-toolbar__toggle" type="button" data-review="collapse" aria-expanded="true">Hide</button>
+  </div>
+  <div class="review-toolbar__body">
+    <div>
+      <label for="rv-view">View as</label>
+      <select id="rv-view" data-review-view>
+        <option value="logged-out">Customer (logged out)</option>
+        <option value="customer">Customer (logged in)</option>
+        <option value="specialist">Specialist</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div>
+      <label for="rv-state">Call panel state</label>
+      <select id="rv-state" data-review="state">
+        <option value="idle">A · Idle</option>
+        <option value="requesting">B · Requesting microphone</option>
+        <option value="blocked">C · Microphone blocked</option>
+        <option value="connecting">D · Connecting</option>
+        <option value="live">E · Live call</option>
+        <option value="ended">I · Call ended</option>
+        <option value="error-connection">J · Connection failed</option>
+        <option value="error-dropped">J · Call dropped</option>
+        <option value="error-busy">J · Service busy</option>
+        <option value="error-limit">J · Time limit reached</option>
+        <option value="error-unsupported">J · Browser not supported</option>
+      </select>
+    </div>
+    <fieldset>
+      <legend>Live mode (globe follows)</legend>
+      <div class="review-seg" data-review="mode">
+        <button type="button" data-mode="listening" aria-pressed="true">Listening</button>
+        <button type="button" data-mode="thinking" aria-pressed="false">Thinking</button>
+        <button type="button" data-mode="speaking" aria-pressed="false">Speaking</button>
+      </div>
+    </fieldset>
+    <div>
+      <label for="rv-activity">F · Activity line (sets Thinking)</label>
+      <select id="rv-activity" data-review="activity">
+        <option value="help">Searching RelayPay help articles</option>
+        <option value="account">Checking your account</option>
+        <option value="transactions" selected>Checking transaction records</option>
+        <option value="payouts">Checking payout records</option>
+        <option value="ticket">Creating a support ticket</option>
+        <option value="callback">Arranging a specialist callback</option>
+      </select>
+    </div>
+    <fieldset>
+      <legend>G · Outcome cards</legend>
+      <label class="review-check"><input type="checkbox" data-review-outcome="verified" checked> Account verified</label>
+      <label class="review-check"><input type="checkbox" data-review-outcome="status" checked> Transaction / payout status</label>
+      <label class="review-check"><input type="checkbox" data-review-outcome="ticket" checked> Support ticket</label>
+      <label class="review-check"><input type="checkbox" data-review-outcome="callback" checked> Specialist callback</label>
+    </fieldset>
+    <div>
+      <label for="rv-status">G4 · Status card sample</label>
+      <select id="rv-status" data-review="status-sample">
+        <option value="live">Demo call · TXN-9001, verified, delayed</option>
+        <option value="ref-future">1 · Transaction, reference only, future arrival</option>
+        <option value="ref-past">2 · Transaction, reference only, past arrival</option>
+        <option value="payout-failed">3 · Payout failed, verified, with callback</option>
+        <option value="verified-tx">4 · Transaction, verified, no escalation</option>
+        <option value="all">All four samples</option>
+      </select>
+    </div>
+    <div>
+      <label for="rv-form">K · Contact details form</label>
+      <select id="rv-form" data-review="form">
+        <option value="hidden">Hidden</option>
+        <option value="standard">Standard caller</option>
+        <option value="verified">Verified caller (email on file)</option>
+        <option value="verified-edit">Verified · different email</option>
+        <option value="errors">Validation errors</option>
+        <option value="submitted">Details received</option>
+      </select>
+    </div>
+    <div class="review-toolbar__row">
+      <button class="review-btn" type="button" data-review="transcript">H · Open transcript</button>
+      <button class="review-btn" type="button" data-review="demo">Play demo call</button>
+    </div>
+    <label class="review-check"><input type="checkbox" data-review="all"> Show every panel state stacked</label>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="shared-cases.js"></script>
+<script src="customer.js"></script>
+<!-- Globe: isolated module. Page works fully without it. -->
+<script type="module" src="globe.js"></script>
+</body>
+</html>
