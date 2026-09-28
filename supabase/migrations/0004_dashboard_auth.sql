@@ -1,0 +1,1 @@
+-- Placeholder — profiles table and dashboard RLS policies. Phase 8 only, optional.

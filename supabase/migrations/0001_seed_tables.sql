@@ -1,0 +1,1 @@
+-- Placeholder — customers, transactions, payouts tables. Implemented in Phase 1 / Stage 2.

@@ -1,0 +1,9 @@
+{
+  "name": "production-customer-support-agent",
+  "private": true,
+  "workspaces": [
+    "apps/agent",
+    "apps/mcp-server"
+  ],
+  "scripts": {}
+}

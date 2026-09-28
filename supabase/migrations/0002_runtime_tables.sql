@@ -1,0 +1,2 @@
+-- Placeholder — conversations, conversation_turns, retrieval_logs, tool_calls, support_tickets,
+-- escalations, evaluations, conversation_events tables. Implemented in Phase 1 / Stage 2.

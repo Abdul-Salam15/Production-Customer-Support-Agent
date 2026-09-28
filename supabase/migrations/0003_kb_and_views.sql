@@ -1,0 +1,1 @@
+-- Placeholder — pgvector extension, kb_chunks table. Implemented in Phase 2 / Stage 3.
