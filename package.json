@@ -5,5 +5,17 @@
     "apps/agent",
     "apps/mcp-server"
   ],
-  "scripts": {}
+  "scripts": {
+    "seed": "tsx supabase/seed/load-seed.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "@types/node": "^22.7.4"
+  }
 }
