@@ -1,2 +1,61 @@
-// Placeholder — typed environment loader. Implemented in Phase 4 / Stage 6.
-export {};
+// Typed environment loader for apps/agent — variables from implementation.md
+// Section 3's agent-backend table. Call loadEnv() once at process start
+// (src/index.ts), before anything else reads process.env.
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { config as loadDotenv } from "dotenv";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+export function loadEnv(): void {
+  loadDotenv({ path: join(__dirname, "..", ".env") });
+}
+
+export interface Env {
+  ANTHROPIC_API_KEY: string;
+  ANTHROPIC_MODEL: string;
+  SUPABASE_URL: string;
+  SUPABASE_SERVICE_ROLE_KEY: string;
+  MCP_SERVER_URL: string;
+  MCP_SERVER_TOKEN: string;
+  VAPI_PRIVATE_KEY: string;
+  VAPI_SERVER_SECRET: string;
+  PORT: number;
+}
+
+const REQUIRED_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_MODEL",
+  "SUPABASE_URL",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "MCP_SERVER_URL",
+  "MCP_SERVER_TOKEN",
+  "VAPI_PRIVATE_KEY",
+  "VAPI_SERVER_SECRET",
+] as const;
+
+let cachedEnv: Env | null = null;
+
+export function getEnv(): Env {
+  if (cachedEnv) return cachedEnv;
+
+  const missing = REQUIRED_KEYS.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
+  }
+
+  cachedEnv = {
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY!,
+    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL!,
+    SUPABASE_URL: process.env.SUPABASE_URL!,
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    MCP_SERVER_URL: process.env.MCP_SERVER_URL!,
+    MCP_SERVER_TOKEN: process.env.MCP_SERVER_TOKEN!,
+    VAPI_PRIVATE_KEY: process.env.VAPI_PRIVATE_KEY!,
+    VAPI_SERVER_SECRET: process.env.VAPI_SERVER_SECRET!,
+    // Railway sets this; read it, don't hardcode.
+    PORT: Number(process.env.PORT ?? 3000),
+  };
+
+  return cachedEnv;
+}
