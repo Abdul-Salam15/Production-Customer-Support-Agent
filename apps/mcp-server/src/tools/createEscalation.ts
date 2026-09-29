@@ -47,14 +47,22 @@ async function escalationIdExists(supabase: SupabaseClient, candidate: string): 
   return data !== null;
 }
 
-// Stub for Phase 4.5's contact-form submission storage, which does not exist
-// yet at this stage (that's the agent backend's contact-details endpoint).
-// Once built, this reads the stored { name, email } for the conversation.
+// A value the customer typed into the contact form (Phase 4.5) and the
+// server stored is authoritative; a value the model transcribed from speech
+// is not.
 async function getStoredContactSubmission(
-  _supabase: SupabaseClient,
-  _conversationId: string | null
+  supabase: SupabaseClient,
+  conversationId: string | null
 ): Promise<{ name: string; email: string } | null> {
-  return null;
+  if (!conversationId) return null;
+
+  const { data } = await supabase
+    .from("contact_submissions")
+    .select("name, email")
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+
+  return data ?? null;
 }
 
 async function resolveContactDetails(

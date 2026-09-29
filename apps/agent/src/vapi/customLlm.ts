@@ -1,11 +1,14 @@
 import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { query, AbortError } from "@anthropic-ai/claude-agent-sdk";
 import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { buildSystemPrompt } from "../systemPrompt.js";
 import { getSession, createSession, setSdkSessionId, nextTurnIndex } from "../session/agentSession.js";
+import { createAbortController } from "../session/abort.js";
 import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChunkId } from "./streaming.js";
+import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext } from "../outputGuard.js";
+import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -105,6 +108,145 @@ async function writeConversationTurns(
   }
 }
 
+async function buildGuardContext(conversationId: string, customerUtterance: string): Promise<GuardContext> {
+  const supabase = getSupabaseClient();
+  const { data: conversation } = await supabase
+    .from("conversations")
+    .select("customer_id")
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+
+  if (!conversation?.customer_id) {
+    return { verifiedAccountEmail: null, customerUtterance, internalPhrases: [], isVerified: false };
+  }
+
+  const { data: customer } = await supabase
+    .from("customers")
+    .select("contact_email, support_notes")
+    .eq("customer_id", conversation.customer_id)
+    .maybeSingle();
+
+  return {
+    verifiedAccountEmail: customer?.contact_email ?? null,
+    customerUtterance,
+    internalPhrases: extractInternalPhrases(customer?.support_notes),
+    isVerified: true,
+  };
+}
+
+// Maps an mcp__relaypay__<tool> invocation to the activity line shown while
+// it runs (Phase 4.7). log_conversation_event is deliberately absent — it's
+// an internal bookkeeping call, not something a caller needs to hear about.
+const ACTIVITY_TEXT: Partial<Record<string, string>> = {
+  lookup_customer: "Verifying your account",
+  lookup_transaction: "Checking transaction records",
+  lookup_payout: "Checking payout records",
+  search_knowledge_base: "Checking our documentation",
+  create_support_ticket: "Creating a support ticket",
+  create_escalation: "Connecting you with a specialist",
+  request_contact_details: "Requesting your contact details",
+};
+
+function tryParseToolResult(content: unknown): Record<string, unknown> | null {
+  if (typeof content === "string") {
+    try {
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(content)) {
+    const textBlock = content.find(
+      (block): block is { type: "text"; text: string } =>
+        typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text"
+    );
+    if (textBlock) {
+      try {
+        return JSON.parse(textBlock.text);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function buildOutcomeEvent(toolName: string, result: Record<string, unknown> | null): CallEvent | null {
+  if (!result) return null;
+
+  switch (toolName) {
+    case "lookup_customer":
+      if (result.found) {
+        return {
+          type: "outcome",
+          card: {
+            kind: "account_verified",
+            data: { company_name: result.company_name, plan: result.plan, account_status: result.account_status },
+          },
+        };
+      }
+      return null;
+    case "lookup_transaction":
+      if (result.found) {
+        return {
+          type: "outcome",
+          card: {
+            kind: "transaction_status",
+            data: {
+              transaction_id: result.transaction_id,
+              status: result.status,
+              past_estimated_arrival: result.past_estimated_arrival,
+            },
+          },
+        };
+      }
+      return null;
+    case "lookup_payout":
+      if (result.found) {
+        return {
+          type: "outcome",
+          card: { kind: "payout_status", data: { payout_id: result.payout_id, status: result.status } },
+        };
+      }
+      return null;
+    case "create_support_ticket":
+      if (result.ticket_id) {
+        return {
+          type: "outcome",
+          card: { kind: "ticket_created", data: { ticket_id: result.ticket_id, status: result.status } },
+        };
+      }
+      return null;
+    case "create_escalation":
+      if (result.escalation_id) {
+        return {
+          type: "outcome",
+          card: {
+            kind: "escalation_created",
+            data: { escalation_id: result.escalation_id, follow_up_summary: result.follow_up_summary },
+          },
+        };
+      }
+      return null;
+    case "request_contact_details":
+      return { type: "contact_form_requested" };
+    default:
+      return null;
+  }
+}
+
+interface ToolUseBlock {
+  type: "tool_use";
+  id: string;
+  name: string;
+}
+
+interface ToolResultBlock {
+  type: "tool_result";
+  tool_use_id: string;
+  content: unknown;
+}
+
 export function registerCustomLlmRoute(router: Router): void {
   router.post("/vapi/chat/completions", bearerAuth, async (req: Request, res: Response) => {
     const env = getEnv();
@@ -134,6 +276,9 @@ export function registerCustomLlmRoute(router: Router): void {
     }
 
     const conversationId = session.conversationId;
+    const guardContext = await buildGuardContext(conversationId, userMessage.content);
+    const guard = new OutputGuard(guardContext);
+    const abortController = createAbortController(req, res);
 
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream");
@@ -144,6 +289,7 @@ export function registerCustomLlmRoute(router: Router): void {
     const chunkId = newChunkId();
     const modelName = body.model ?? env.ANTHROPIC_MODEL;
     const tagBuffer = createTagStrippingBuffer();
+    const pendingToolUses = new Map<string, string>();
 
     let finalText = "";
     let sawResult = false;
@@ -159,6 +305,7 @@ export function registerCustomLlmRoute(router: Router): void {
           allowDangerouslySkipPermissions: true,
           includePartialMessages: true,
           resume: session.sdkSessionId ?? undefined,
+          abortController,
           mcpServers: {
             relaypay: {
               type: "http",
@@ -187,8 +334,32 @@ export function registerCustomLlmRoute(router: Router): void {
         if (message.type === "stream_event") {
           const event = message.event;
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            const toForward = tagBuffer.push(event.delta.text);
+            const afterTag = tagBuffer.push(event.delta.text);
+            const toForward = guard.push(afterTag);
             writeSseChunk(res, modelName, chunkId, toForward);
+          }
+        } else if (message.type === "assistant") {
+          const content = (message.message?.content ?? []) as unknown[];
+          for (const block of content) {
+            if ((block as ToolUseBlock)?.type === "tool_use") {
+              const toolUse = block as ToolUseBlock;
+              const toolName = toolUse.name.replace(/^mcp__relaypay__/, "");
+              pendingToolUses.set(toolUse.id, toolName);
+              const activity = ACTIVITY_TEXT[toolName];
+              if (activity) publishCallEvent(callId, { type: "activity", text: activity });
+            }
+          }
+        } else if (message.type === "user") {
+          const content = (message.message?.content ?? []) as unknown[];
+          for (const block of content) {
+            if ((block as ToolResultBlock)?.type === "tool_result") {
+              const toolResult = block as ToolResultBlock;
+              const toolName = pendingToolUses.get(toolResult.tool_use_id);
+              if (!toolName) continue;
+              const parsed = tryParseToolResult(toolResult.content);
+              const outcomeEvent = buildOutcomeEvent(toolName, parsed);
+              if (outcomeEvent) publishCallEvent(callId, outcomeEvent);
+            }
           }
         } else if (message.type === "result") {
           sawResult = true;
@@ -196,10 +367,23 @@ export function registerCustomLlmRoute(router: Router): void {
         }
       }
     } catch (error) {
-      console.error("customLlm: Agent SDK query failed", error);
+      if (error instanceof AbortError) {
+        console.log(`customLlm: turn aborted for call ${callId} (caller interrupted)`);
+      } else {
+        console.error("customLlm: Agent SDK query failed", error);
+      }
     }
 
-    writeSseDone(res, modelName, chunkId);
+    if (!res.writableEnded) {
+      const remaining = guard.flushRemaining();
+      if (remaining) writeSseChunk(res, modelName, chunkId, remaining);
+      writeSseDone(res, modelName, chunkId);
+    }
+
+    if (guard.wasTripped()) {
+      const reason = guard.getBlockReason();
+      if (reason) await logGuardBlock(conversationId, reason, finalText);
+    }
 
     if (sawResult) {
       const { text: cleanedText, tag } = stripTag(finalText);
