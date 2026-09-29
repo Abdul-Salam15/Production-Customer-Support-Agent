@@ -486,14 +486,28 @@
       target.focus();
       return;
     }
-    // Real: POST to callback endpoint, then call submitContactForm on success.
-    submitContactForm({
+    var usingOwnFileEmail = cfVerified && !cfUseOther;
+    var rawEmail = $('#cf-email').value.trim();
+    var payload = {
       name: $('#cf-name').value.trim(),
-      email: cfVerified && !cfUseOther ? ON_FILE_EMAIL : maskEmail($('#cf-email').value.trim()),
+      email: usingOwnFileEmail ? ON_FILE_EMAIL : maskEmail(rawEmail),
       when: formatWhen(),
       tz: cfTz.value,
       notes: $('#cf-notes').value.trim()
-    });
+    };
+    if (!activeCallId || usingOwnFileEmail) {
+      // No real call to POST against, or the caller is using their verified
+      // account's own email — create_escalation already defaults to that
+      // account's contact_email without needing a stored submission.
+      submitContactForm(payload);
+      return;
+    }
+    fetch('/api/calls/' + activeCallId + '/contact', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: payload.name, email: rawEmail, callbackTime: payload.when })
+    }).then(function () { submitContactForm(payload); })
+      .catch(function () { submitContactForm(payload); });
   });
 
   function sayInstead() {
@@ -586,8 +600,144 @@
   }
 
   function endCall() {
+    if (activeVapi) { activeVapi.stop(); return; } // 'call-end' handler transitions to 'ended'
     clearDemo();
     setState('ended', { focus: true });
+  }
+
+  /* ---------- Real call (Vapi Web SDK) ----------
+     Verify the SDK import path and event names below against Vapi's current
+     docs when testing with a real account (Stage 9) — this is our
+     best-documented understanding at build time, not a live-verified one. */
+  var activeVapi = null;
+  var activeCallId = null;
+  var callEventSource = null;
+  var vapiConfigPromise = null;
+  var realStatusCards = [];
+
+  function loadVapiConfig() {
+    if (!vapiConfigPromise) {
+      vapiConfigPromise = fetch('/api/config').then(function (r) {
+        if (!r.ok) throw new Error('config fetch failed');
+        return r.json();
+      });
+    }
+    return vapiConfigPromise;
+  }
+
+  // Loaded at call time via dynamic import (works even from this
+  // non-module script) rather than adding a new <script> tag to index.html.
+  function loadVapiSdk() {
+    return import('https://esm.sh/@vapi-ai/web').then(function (mod) { return mod.default; });
+  }
+
+  function closeCallEventStream() {
+    if (callEventSource) { callEventSource.close(); callEventSource = null; }
+  }
+
+  // Frontend badges only know processing/scheduled/delayed/failed/review;
+  // map the DB's "review required" onto "review". Anything else passes
+  // through as-is — statusCardHTML already falls back gracefully for an
+  // unrecognized status.
+  function mapDbStatus(s) { return s === 'review required' ? 'review' : s; }
+
+  function statusCardFromOutcome(kind, data) {
+    if (kind === 'transaction_status') {
+      var card = { kind: 'transaction', ref: data.transaction_id, status: mapDbStatus(data.status), summary: data.support_summary || '' };
+      if (data.estimated_arrival) card.eta = new Date(data.estimated_arrival + 'T12:00:00');
+      if (data.amount != null && data.currency) card.amount = data.amount + ' ' + data.currency;
+      return card;
+    }
+    if (kind === 'payout_status') {
+      var pcard = { kind: 'payout', ref: data.payout_id, status: mapDbStatus(data.status), summary: data.failure_reason || '' };
+      if (data.scheduled_for) pcard.scheduledFor = new Date(data.scheduled_for + 'T12:00:00');
+      else if (data.failure_reason) pcard.reason = data.failure_reason;
+      return pcard;
+    }
+    return null;
+  }
+
+  function subscribeToCallEvents(callId) {
+    closeCallEventStream();
+    callEventSource = new EventSource('/api/calls/' + callId + '/events');
+    callEventSource.onmessage = function (e) {
+      var evt;
+      try { evt = JSON.parse(e.data); } catch (err) { return; }
+      if (evt.type === 'activity') {
+        setActivity(evt.key);
+        setLiveMode('thinking');
+      } else if (evt.type === 'outcome') {
+        var card = evt.card || {};
+        if (card.kind === 'account_verified') setOutcome('verified', true);
+        else if (card.kind === 'ticket_created') setOutcome('ticket', true);
+        else if (card.kind === 'escalation_created') setOutcome('callback', true);
+        else if (card.kind === 'transaction_status' || card.kind === 'payout_status') {
+          var sc = statusCardFromOutcome(card.kind, card.data || {});
+          if (sc) {
+            realStatusCards = realStatusCards.filter(function (c) { return c.ref !== sc.ref; });
+            realStatusCards.push(sc);
+            setStatusCards(realStatusCards.slice());
+            setOutcome('status', true);
+          }
+        }
+      } else if (evt.type === 'contact_form_requested') {
+        showContactForm(state.outcomes.verified ? 'verified' : 'standard');
+      }
+      // contact_details_received is informational only — the confirmation
+      // UI already appears locally from submitContactForm on this same
+      // submission, so there is nothing further to render here.
+    };
+  }
+
+  function bindVapiEvents(vapi) {
+    vapi.on('call-start', function () {
+      setState('live', { focus: true });
+    });
+    vapi.on('call-end', function () {
+      closeCallEventStream();
+      activeVapi = null;
+      setState('ended', { focus: true });
+    });
+    vapi.on('error', function () { setState('error-connection', { focus: true }); });
+    vapi.on('speech-start', function () { setLiveMode('speaking'); });
+    vapi.on('speech-end', function () { setLiveMode('listening'); });
+    vapi.on('message', function (msg) {
+      if (!msg || msg.type !== 'transcript') return;
+      var who = msg.role === 'assistant' ? 'agent' : 'you';
+      setCaption(who, msg.transcript);
+      if (msg.transcriptType === 'final') addTranscriptLine(who, msg.transcript);
+    });
+  }
+
+  function startRealCall() {
+    clearDemo();
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setState('error-unsupported', { focus: true }); return;
+    }
+    state.seconds = 0; state.transcript = []; setMuted(false);
+    ['verified', 'status', 'ticket', 'callback'].forEach(function (k) { setOutcome(k, false); });
+    realStatusCards = [];
+    setStatusCards([]); syncStatusSelect('live');
+    setCaption('you', ''); setCaption('agent', '');
+    hideContactForm(); syncFormSelect('hidden');
+    setState('requesting', { focus: true });
+
+    Promise.all([loadVapiConfig(), loadVapiSdk()]).then(function (results) {
+      var cfg = results[0], Vapi = results[1];
+      activeVapi = new Vapi(cfg.vapiPublicKey);
+      bindVapiEvents(activeVapi);
+      setState('connecting', { focus: true });
+      // start() resolves with the Call object (call.id) once Vapi creates
+      // it — that id is what the custom-LLM endpoint and callEvents stream
+      // key on, so subscribe as soon as it's known rather than waiting for
+      // 'call-start' (which carries no payload).
+      return activeVapi.start(cfg.vapiAssistantId);
+    }).then(function (call) {
+      activeCallId = call && call.id;
+      if (activeCallId) subscribeToCallEvents(activeCallId);
+    }).catch(function () {
+      setState('error-connection', { focus: true });
+    });
   }
 
   /* ---------- Events ---------- */
@@ -595,7 +745,7 @@
     var btn = e.target.closest('[data-action]');
     if (!btn) return;
     switch (btn.dataset.action) {
-      case 'start-call': startCall(); break;
+      case 'start-call': startRealCall(); break;
       case 'cancel': clearDemo(); setState('idle', { focus: true }); break;
       case 'end-call': endCall(); break;
       case 'toggle-mute': setMuted(!state.muted); break;

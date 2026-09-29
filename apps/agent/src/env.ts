@@ -21,6 +21,10 @@ export interface Env {
   VAPI_PRIVATE_KEY: string;
   VAPI_SERVER_SECRET: string;
   PORT: number;
+  // Browser-exposed, not secret (Section 3) — served to the frontend via
+  // GET /api/config so the Vapi Web SDK can initialize (Stage 8).
+  VAPI_PUBLIC_KEY: string;
+  VAPI_ASSISTANT_ID: string;
 }
 
 const REQUIRED_KEYS = [
@@ -32,6 +36,8 @@ const REQUIRED_KEYS = [
   "MCP_SERVER_TOKEN",
   "VAPI_PRIVATE_KEY",
   "VAPI_SERVER_SECRET",
+  "VAPI_PUBLIC_KEY",
+  "VAPI_ASSISTANT_ID",
 ] as const;
 
 let cachedEnv: Env | null = null;
@@ -53,6 +59,8 @@ export function getEnv(): Env {
     MCP_SERVER_TOKEN: process.env.MCP_SERVER_TOKEN!,
     VAPI_PRIVATE_KEY: process.env.VAPI_PRIVATE_KEY!,
     VAPI_SERVER_SECRET: process.env.VAPI_SERVER_SECRET!,
+    VAPI_PUBLIC_KEY: process.env.VAPI_PUBLIC_KEY!,
+    VAPI_ASSISTANT_ID: process.env.VAPI_ASSISTANT_ID!,
     // Railway sets this; read it, don't hardcode.
     PORT: Number(process.env.PORT ?? 3000),
   };

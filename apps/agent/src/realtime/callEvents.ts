@@ -1,11 +1,12 @@
 import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
 
-// Per-call SSE stream the frontend subscribes to (Phase 4.7). Wiring this
-// into window.RelayCall is Stage 8's job — this stage only has to prove the
-// stream carries the right events.
+// Per-call SSE stream the frontend subscribes to (Phase 4.7), wired into
+// window.RelayCall in Stage 8. activity's key is one of app.js's existing
+// ACTIVITIES keys (help/account/transactions/payouts/ticket/callback) —
+// setActivity() only recognizes that fixed vocabulary, not free text.
 export type CallEvent =
-  | { type: "activity"; text: string }
+  | { type: "activity"; key: string }
   | { type: "outcome"; card: OutcomeCard }
   | { type: "contact_form_requested" }
   | { type: "contact_details_received"; note: string };

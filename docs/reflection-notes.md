@@ -45,3 +45,30 @@
   `--watch`) — the escalation kept using the account-default email until the process was
   restarted. A reminder to restart both services after any mcp-server source change, not just
   the agent backend.
+- Stage 8's backend event shapes changed to match app.js's existing, fixed vocabulary rather
+  than the other way around: `setActivity()` only recognizes six keys
+  (help/account/transactions/payouts/ticket/callback), so the SSE 'activity' event now carries
+  `key` (one of those six), not free text. Verified end-to-end: a real transaction lookup
+  produced `{"type":"activity","key":"transactions"}` and an outcome payload with exactly the
+  fields `statusCardFromOutcome()` needs (including `amount`/`currency` correctly nulled out
+  for an unverified/reference-only caller).
+- The Vapi Web SDK's call ID is not on `vapi.call.id` (that's the underlying Daily.co WebRTC
+  object) — it's the resolved value of `vapi.start(assistantId)` itself, a `Call` object with
+  `.id`. Confirmed by downloading and reading the actual `@vapi-ai/web@2.7.1` source
+  (`npm pack`), not guessed; the event names used (`call-start`, `call-end`, `speech-start`,
+  `speech-end`, `message` with `role`/`transcript`/`transcriptType`) were confirmed the same
+  way. The exact CDN import path (`esm.sh/@vapi-ai/web`) and behavior are still unverified
+  against a live Vapi account — do that in Stage 9.
+- Real Vapi Web SDK initialization is loaded via dynamic `import()` inside app.js rather than
+  adding a `<script>` tag to index.html, keeping this stage's changes confined to app.js as
+  instructed. `VAPI_PUBLIC_KEY`/`VAPI_ASSISTANT_ID` reach the browser via a new `GET
+  /api/config` route (added to `index.ts`) rather than templating them into the static HTML.
+- Could not test an actual real-call end-to-end in this environment: no real Vapi account/keys
+  exist yet (Stage 9), and there is no microphone or real browser available here. What was
+  verified instead: the toolbar/demo path is provably unaffected (driven live via jsdom — every
+  preview control still updates the DOM exactly as before); static serving and `/api/config`
+  work against the real running Express app; and the backend's SSE event shapes were confirmed
+  correct against real tool-call data. The Vapi SDK's own API (call-id retrieval, event names)
+  was verified against its actual published source rather than assumed. The one thing that
+  cannot be verified without a live account is Vapi's actual runtime behavior calling our
+  endpoints.

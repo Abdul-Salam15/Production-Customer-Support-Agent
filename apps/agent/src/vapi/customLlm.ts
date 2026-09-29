@@ -134,17 +134,19 @@ async function buildGuardContext(conversationId: string, customerUtterance: stri
   };
 }
 
-// Maps an mcp__relaypay__<tool> invocation to the activity line shown while
-// it runs (Phase 4.7). log_conversation_event is deliberately absent — it's
+// Maps an mcp__relaypay__<tool> invocation to one of app.js's existing
+// ACTIVITIES keys (help/account/transactions/payouts/ticket/callback) — not
+// free text, since setActivity() only recognizes that fixed vocabulary
+// (Stage 8 wiring). log_conversation_event is deliberately absent — it's
 // an internal bookkeeping call, not something a caller needs to hear about.
-const ACTIVITY_TEXT: Partial<Record<string, string>> = {
-  lookup_customer: "Verifying your account",
-  lookup_transaction: "Checking transaction records",
-  lookup_payout: "Checking payout records",
-  search_knowledge_base: "Checking our documentation",
-  create_support_ticket: "Creating a support ticket",
-  create_escalation: "Connecting you with a specialist",
-  request_contact_details: "Requesting your contact details",
+const ACTIVITY_KEY: Partial<Record<string, string>> = {
+  lookup_customer: "account",
+  lookup_transaction: "transactions",
+  lookup_payout: "payouts",
+  search_knowledge_base: "help",
+  create_support_ticket: "ticket",
+  create_escalation: "callback",
+  request_contact_details: "callback",
 };
 
 function tryParseToolResult(content: unknown): Record<string, unknown> | null {
@@ -171,7 +173,14 @@ function tryParseToolResult(content: unknown): Record<string, unknown> | null {
   return null;
 }
 
-function buildOutcomeEvent(toolName: string, result: Record<string, unknown> | null): CallEvent | null {
+// data carries exactly what app.js's statusCardHTML()/setStatusCards() need
+// to build a card (Stage 8 wiring) — amount is only included when verified,
+// matching the frontend's own "reference-only callers never see it" rule.
+function buildOutcomeEvent(
+  toolName: string,
+  result: Record<string, unknown> | null,
+  isVerified: boolean
+): CallEvent | null {
   if (!result) return null;
 
   switch (toolName) {
@@ -195,7 +204,11 @@ function buildOutcomeEvent(toolName: string, result: Record<string, unknown> | n
             data: {
               transaction_id: result.transaction_id,
               status: result.status,
+              support_summary: result.support_summary,
+              estimated_arrival: result.estimated_arrival,
               past_estimated_arrival: result.past_estimated_arrival,
+              amount: isVerified ? result.amount : null,
+              currency: isVerified ? result.currency : null,
             },
           },
         };
@@ -205,7 +218,16 @@ function buildOutcomeEvent(toolName: string, result: Record<string, unknown> | n
       if (result.found) {
         return {
           type: "outcome",
-          card: { kind: "payout_status", data: { payout_id: result.payout_id, status: result.status } },
+          card: {
+            kind: "payout_status",
+            data: {
+              payout_id: result.payout_id,
+              status: result.status,
+              failure_reason: result.failure_reason,
+              scheduled_for: result.scheduled_for,
+              past_estimated_arrival: result.past_estimated_arrival,
+            },
+          },
         };
       }
       return null;
@@ -345,8 +367,8 @@ export function registerCustomLlmRoute(router: Router): void {
               const toolUse = block as ToolUseBlock;
               const toolName = toolUse.name.replace(/^mcp__relaypay__/, "");
               pendingToolUses.set(toolUse.id, toolName);
-              const activity = ACTIVITY_TEXT[toolName];
-              if (activity) publishCallEvent(callId, { type: "activity", text: activity });
+              const activityKey = ACTIVITY_KEY[toolName];
+              if (activityKey) publishCallEvent(callId, { type: "activity", key: activityKey });
             }
           }
         } else if (message.type === "user") {
@@ -357,7 +379,7 @@ export function registerCustomLlmRoute(router: Router): void {
               const toolName = pendingToolUses.get(toolResult.tool_use_id);
               if (!toolName) continue;
               const parsed = tryParseToolResult(toolResult.content);
-              const outcomeEvent = buildOutcomeEvent(toolName, parsed);
+              const outcomeEvent = buildOutcomeEvent(toolName, parsed, guardContext.isVerified);
               if (outcomeEvent) publishCallEvent(callId, outcomeEvent);
             }
           }
