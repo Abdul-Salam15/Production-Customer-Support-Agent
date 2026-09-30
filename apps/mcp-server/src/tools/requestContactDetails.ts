@@ -23,7 +23,11 @@ export function registerRequestContactDetails(server: McpServer): void {
     "request_contact_details",
     {
       title: "Request Contact Details",
-      description: "Signal that the caller's contact details are needed. Does not collect or store anything itself.",
+      description:
+        "Shows the caller an on-screen form (name, email, preferred callback time) they can fill in themselves, " +
+        "instead of speaking those details aloud. Call this whenever you need the caller's contact details for a " +
+        "callback or escalation — always as the default, not only when asked. Does not collect or store anything " +
+        "itself; the caller's own submission is the source of truth.",
       inputSchema: inputShape,
     },
     withLogging("request_contact_details", "Signal that a contact form is needed", handle)
