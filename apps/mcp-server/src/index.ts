@@ -33,6 +33,14 @@ function buildServer(): McpServer {
 
 const app = createMcpExpressApp();
 
+// Unauthenticated, cheap target for uptime/keep-alive pings — /mcp requires
+// a bearer token, so a monitor hitting it would always see 403 and
+// eventually get auto-disabled by services that give up after repeated
+// "failures."
+app.get("/health", (_req, res) => {
+  res.status(200).type("text/plain").send("ok");
+});
+
 app.use("/mcp", bearerAuth);
 
 app.post("/mcp", async (req, res) => {

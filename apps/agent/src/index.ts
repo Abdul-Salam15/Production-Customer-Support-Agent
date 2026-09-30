@@ -25,6 +25,14 @@ app.get("/api/config", (_req, res) => {
   res.json({ vapiPublicKey: env.VAPI_PUBLIC_KEY, vapiAssistantId: env.VAPI_ASSISTANT_ID });
 });
 
+// Unauthenticated, cheap target for uptime/keep-alive pings. /api/config's
+// JSON response comes back chunked (no Content-Length) through Render's
+// Cloudflare front end, which some monitors misjudge as unbounded/"too
+// large" and flag as a failure — a plain-text response avoids that.
+app.get("/health", (_req, res) => {
+  res.status(200).type("text/plain").send("ok");
+});
+
 // Customer site and specialist queue site are one deployed service (Phase 5).
 app.use(express.static(join(__dirname, "..", "public")));
 
