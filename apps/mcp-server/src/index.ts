@@ -31,7 +31,16 @@ function buildServer(): McpServer {
   return server;
 }
 
-const app = createMcpExpressApp();
+// createMcpExpressApp() defaults its DNS-rebinding Host check to only
+// 127.0.0.1/localhost/::1, applied ahead of every route. Render serves this
+// app under its own public hostname, so without listing it here every
+// request — including from Vapi's real MCP tool calls — gets rejected with
+// 403 "Invalid Host" before reaching any route. RENDER_EXTERNAL_HOSTNAME is
+// set automatically by Render, so this needs no manual per-deploy config.
+const allowedHosts = ["127.0.0.1", "localhost", "::1"];
+if (process.env.RENDER_EXTERNAL_HOSTNAME) allowedHosts.push(process.env.RENDER_EXTERNAL_HOSTNAME);
+
+const app = createMcpExpressApp({ allowedHosts });
 
 // Unauthenticated, cheap target for uptime/keep-alive pings — /mcp requires
 // a bearer token, so a monitor hitting it would always see 403 and
