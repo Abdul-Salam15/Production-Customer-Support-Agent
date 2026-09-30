@@ -232,6 +232,8 @@
     el.addEventListener(el.tagName === 'BUTTON' ? 'click' : 'change', function () { if (VIEWS.indexOf(location.hash.slice(1)) >= 0) go(''); });
   });
 
+  $('[data-action="log-out"]').addEventListener('click', function () { signOut(); go(''); });
+
   /* ---------- Init ---------- */
   var as = new URLSearchParams(location.search).get('as'), saved = null;
   try { saved = sessionStorage.getItem(KEY); } catch (e) {}
