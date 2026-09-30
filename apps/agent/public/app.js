@@ -157,8 +157,6 @@
       var h = $('.call-state[data-state="' + name + '"] [data-state-heading]', panel);
       if (h) h.focus({ preventScroll: true });
     }
-    var sel = $('[data-review="state"]');
-    if (sel) sel.value = name;
   }
 
   function setLiveMode(mode) {
@@ -171,7 +169,6 @@
       globeState(mode);
       if (reduceMotion.matches) drawWave(0);
     }
-    $$('[data-review="mode"] button').forEach(function (b) { b.setAttribute('aria-pressed', b.dataset.mode === mode); });
     announce(MODE_LABEL[mode] + (mode === 'thinking' ? '. ' + ACTIVITIES[state.activity] : ''));
   }
 
@@ -179,16 +176,12 @@
     if (!ACTIVITIES[key]) return;
     state.activity = key;
     $('[data-activity-text]').textContent = ACTIVITIES[key];
-    var sel = $('[data-review="activity"]');
-    if (sel) sel.value = key;
   }
 
   function setOutcome(key, on) {
     state.outcomes[key] = !!on;
     var card = $('[data-outcomes-source] [data-outcome="' + key + '"]');
     if (card) card.hidden = !on;
-    var cb = $('[data-review-outcome="' + key + '"]');
-    if (cb) cb.checked = !!on;
     syncOutcomes();
   }
 
@@ -450,7 +443,7 @@
     announce('Callback form shown. A specialist will follow up. Add your details below, or say them aloud.');
     if (opts.focus) setTimeout(function () { $('#contact-form-title').focus({ preventScroll: false }); }, 30);
   }
-  function hideContactForm() { clearTimeout(collapseTimer); cf.hidden = true; var s = $('[data-review="form"]'); if (s) s.value = 'hidden'; }
+  function hideContactForm() { clearTimeout(collapseTimer); cf.hidden = true; }
 
   function formatWhen() {
     var d = cfDate.value, t = $('#cf-time').value;
@@ -590,9 +583,9 @@
     }
     state.seconds = 0; state.transcript = []; setMuted(false);
     ['verified', 'status', 'ticket', 'callback'].forEach(function (k) { setOutcome(k, false); });
-    setStatusCards(STATUS_SAMPLES.live.cards); syncStatusSelect('live');
+    setStatusCards(STATUS_SAMPLES.live.cards);
     setCaption('you', ''); setCaption('agent', '');
-    hideContactForm(); syncFormSelect('hidden');
+    hideContactForm();
     setState('requesting', { focus: true });
     // Real: navigator.mediaDevices.getUserMedia({ audio: true }) → connecting | blocked
     at(1600, function () { setState('connecting', { focus: true }); });
@@ -717,9 +710,9 @@
     state.seconds = 0; state.transcript = []; setMuted(false);
     ['verified', 'status', 'ticket', 'callback'].forEach(function (k) { setOutcome(k, false); });
     realStatusCards = [];
-    setStatusCards([]); syncStatusSelect('live');
+    setStatusCards([]);
     setCaption('you', ''); setCaption('agent', '');
-    hideContactForm(); syncFormSelect('hidden');
+    hideContactForm();
     setState('requesting', { focus: true });
 
     Promise.all([loadVapiConfig(), loadVapiSdk()]).then(function (results) {
@@ -772,48 +765,6 @@
       hint.querySelector('strong').textContent = '“' + q + '”';
     });
   });
-
-  /* ---------- Preview states toolbar (design review only) ---------- */
-  var tb = $('[data-review-toolbar]');
-  if (tb) {
-    $('[data-review="state"]').addEventListener('change', function (e) { clearDemo(); setState(e.target.value); });
-    $$('[data-review="mode"] button').forEach(function (b) {
-      b.addEventListener('click', function () {
-        clearDemo(); if (state.panel !== 'live') setState('live'); setLiveMode(b.dataset.mode);
-      });
-    });
-    $('[data-review="activity"]').addEventListener('change', function (e) {
-      clearDemo(); if (state.panel !== 'live') setState('live');
-      setActivity(e.target.value); setLiveMode('thinking');
-    });
-    $$('[data-review-outcome]').forEach(function (cb) {
-      cb.addEventListener('change', function () { setOutcome(cb.dataset.reviewOutcome, cb.checked); });
-    });
-    $('[data-review="transcript"]').addEventListener('click', function () {
-      clearDemo(); if (state.panel !== 'live') setState('live'); openTranscript();
-    });
-    $('[data-review="demo"]').addEventListener('click', startCall);
-    $('[data-review="form"]').addEventListener('change', function (e) { clearDemo(); previewContactForm(e.target.value); });
-    $('[data-review="status-sample"]').addEventListener('change', function (e) {
-      clearDemo();
-      if (state.panel !== 'live' && state.panel !== 'ended') setState('live');
-      applyStatusSample(e.target.value);
-    });
-    $('[data-review="all"]').addEventListener('change', function (e) {
-      document.body.classList.toggle('review-all', e.target.checked);
-      if (e.target.checked) { sizeCanvas(); drawWave(0); }
-    });
-    var collapse = $('[data-review="collapse"]');
-    collapse.addEventListener('click', function () {
-      var c = tb.classList.toggle('is-collapsed');
-      collapse.textContent = c ? 'Preview states' : 'Hide';
-      collapse.setAttribute('aria-expanded', !c);
-    });
-    if (window.matchMedia('(max-width: 760px)').matches) collapse.click();
-  }
-
-  function syncStatusSelect(v) { var s = $('[data-review="status-sample"]'); if (s) s.value = v; }
-  function syncFormSelect(v) { var s = $('[data-review="form"]'); if (s) s.value = v; }
 
   /* ---------- Init ---------- */
   setStatusCards(statusCards);

@@ -81,7 +81,7 @@
         <section class="call-panel call-panel--idle" id="call-panel" aria-label="Voice call" data-call-panel>
 
           <!-- A. Idle -->
-          <div class="call-state call-state--idle" data-state="idle" data-review-label="A · Idle">
+          <div class="call-state call-state--idle" data-state="idle">
             <div class="call-panel__idle-head">
               <h2 class="call-panel__idle-title" tabindex="-1" data-state-heading>Voice call</h2>
               <span class="call-panel__idle-meta">Uses your microphone</span>
@@ -94,7 +94,7 @@
           </div>
 
           <!-- B. Requesting microphone -->
-          <div class="call-state call-state--requesting" data-state="requesting" data-review-label="B · Requesting microphone" hidden>
+          <div class="call-state call-state--requesting" data-state="requesting" hidden>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>Allow microphone access</h2>
             <p class="call-state__text">Your browser is asking to use your microphone. Choose Allow to start the call.</p>
             <div class="mic-prompt">
@@ -107,7 +107,7 @@
           </div>
 
           <!-- C. Microphone blocked -->
-          <div class="call-state call-state--blocked" data-state="blocked" data-review-label="C · Microphone blocked" hidden>
+          <div class="call-state call-state--blocked" data-state="blocked" hidden>
             <p class="call-state__eyebrow call-state__eyebrow--caution">Microphone unavailable</p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>Microphone access is blocked</h2>
             <p class="call-state__text">We need your microphone to connect the call. To turn it back on:</p>
@@ -122,7 +122,7 @@
           </div>
 
           <!-- D. Connecting -->
-          <div class="call-state call-state--connecting" data-state="connecting" data-review-label="D · Connecting" hidden>
+          <div class="call-state call-state--connecting" data-state="connecting" hidden>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>Connecting you to RelayPay support</h2>
             <p class="call-state__text">This usually takes a few seconds.</p>
             <div class="progress-line" role="progressbar" aria-label="Connecting"><span class="progress-line__bar"></span></div>
@@ -132,7 +132,7 @@
           </div>
 
           <!-- E. Live call -->
-          <div class="call-state call-state--live" data-state="live" data-review-label="E · Live call (F activity line, G outcome cards, K contact form)" hidden>
+          <div class="call-state call-state--live" data-state="live" hidden>
             <h2 class="sr-only" tabindex="-1" data-state-heading>Call in progress</h2>
             <div class="live-bar">
               <p class="live-status" data-live-status>
@@ -274,7 +274,7 @@
           </div>
 
           <!-- I. Call ended -->
-          <div class="call-state call-state--ended" data-state="ended" data-review-label="I · Call ended" hidden>
+          <div class="call-state call-state--ended" data-state="ended" hidden>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>Call ended</h2>
             <p class="call-state__text">Thanks for calling RelayPay support.</p>
             <dl class="call-summary">
@@ -294,7 +294,7 @@
           </div>
 
           <!-- J1. Connection failed -->
-          <div class="call-state call-state--error call-state--connection-failed" data-state="error-connection" data-review-label="J · Connection failed" hidden>
+          <div class="call-state call-state--error call-state--connection-failed" data-state="error-connection" hidden>
             <p class="call-state__eyebrow call-state__eyebrow--error">Connection error</p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>We couldn't connect the call.</h2>
             <p class="call-state__text">Check your internet connection, then try again.</p>
@@ -304,7 +304,7 @@
           </div>
 
           <!-- J2. Call dropped -->
-          <div class="call-state call-state--error call-state--dropped" data-state="error-dropped" data-review-label="J · Call dropped" hidden>
+          <div class="call-state call-state--error call-state--dropped" data-state="error-dropped" hidden>
             <p class="call-state__eyebrow call-state__eyebrow--error">Call interrupted</p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>The call dropped.</h2>
             <p class="call-state__text">Your connection was lost. Anything already arranged on this call is saved.</p>
@@ -316,7 +316,7 @@
           </div>
 
           <!-- J3. Service busy -->
-          <div class="call-state call-state--error call-state--busy" data-state="error-busy" data-review-label="J · Service busy" hidden>
+          <div class="call-state call-state--error call-state--busy" data-state="error-busy" hidden>
             <p class="call-state__eyebrow call-state__eyebrow--caution">High demand</p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>Voice support is busy right now.</h2>
             <p class="call-state__text">Please try again in a few minutes.</p>
@@ -326,7 +326,7 @@
           </div>
 
           <!-- J4. Time limit -->
-          <div class="call-state call-state--error call-state--time-limit" data-state="error-limit" data-review-label="J · Time limit reached" hidden>
+          <div class="call-state call-state--error call-state--time-limit" data-state="error-limit" hidden>
             <p class="call-state__eyebrow">Call ended · <span class="tabular">20:00</span></p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>This call has reached its time limit.</h2>
             <p class="call-state__text">Your references are saved below. Start a new call if you need more help.</p>
@@ -338,7 +338,7 @@
           </div>
 
           <!-- J5. Browser not supported -->
-          <div class="call-state call-state--error call-state--unsupported" data-state="error-unsupported" data-review-label="J · Browser not supported" hidden>
+          <div class="call-state call-state--error call-state--unsupported" data-state="error-unsupported" hidden>
             <p class="call-state__eyebrow call-state__eyebrow--caution">Browser not supported</p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>Voice calls don't work in this browser.</h2>
             <p class="call-state__text">Open this page in a current version of Chrome, Edge, Safari, or Firefox.</p>
@@ -523,99 +523,6 @@
   </div>
   <p class="transcript-drawer__foot">Sensitive details are never read out on calls.</p>
 </aside>
-
-<!-- ======================================================================
-     Design review tool — remove before production
-     ====================================================================== -->
-<div class="review-toolbar" data-review-toolbar role="region" aria-label="Preview states (design review tool)">
-  <div class="review-toolbar__head">
-    <div>
-      <div class="review-toolbar__title">Preview states</div>
-      <div class="review-toolbar__sub">Design review tool · not part of the product</div>
-    </div>
-    <button class="review-toolbar__toggle" type="button" data-review="collapse" aria-expanded="true">Hide</button>
-  </div>
-  <div class="review-toolbar__body">
-    <div>
-      <label for="rv-view">View as</label>
-      <select id="rv-view" data-review-view>
-        <option value="logged-out">Customer (logged out)</option>
-        <option value="customer">Customer (logged in)</option>
-        <option value="specialist">Specialist</option>
-        <option value="admin">Admin</option>
-      </select>
-    </div>
-    <div>
-      <label for="rv-state">Call panel state</label>
-      <select id="rv-state" data-review="state">
-        <option value="idle">A · Idle</option>
-        <option value="requesting">B · Requesting microphone</option>
-        <option value="blocked">C · Microphone blocked</option>
-        <option value="connecting">D · Connecting</option>
-        <option value="live">E · Live call</option>
-        <option value="ended">I · Call ended</option>
-        <option value="error-connection">J · Connection failed</option>
-        <option value="error-dropped">J · Call dropped</option>
-        <option value="error-busy">J · Service busy</option>
-        <option value="error-limit">J · Time limit reached</option>
-        <option value="error-unsupported">J · Browser not supported</option>
-      </select>
-    </div>
-    <fieldset>
-      <legend>Live mode (globe follows)</legend>
-      <div class="review-seg" data-review="mode">
-        <button type="button" data-mode="listening" aria-pressed="true">Listening</button>
-        <button type="button" data-mode="thinking" aria-pressed="false">Thinking</button>
-        <button type="button" data-mode="speaking" aria-pressed="false">Speaking</button>
-      </div>
-    </fieldset>
-    <div>
-      <label for="rv-activity">F · Activity line (sets Thinking)</label>
-      <select id="rv-activity" data-review="activity">
-        <option value="help">Searching RelayPay help articles</option>
-        <option value="account">Checking your account</option>
-        <option value="transactions" selected>Checking transaction records</option>
-        <option value="payouts">Checking payout records</option>
-        <option value="ticket">Creating a support ticket</option>
-        <option value="callback">Arranging a specialist callback</option>
-      </select>
-    </div>
-    <fieldset>
-      <legend>G · Outcome cards</legend>
-      <label class="review-check"><input type="checkbox" data-review-outcome="verified" checked> Account verified</label>
-      <label class="review-check"><input type="checkbox" data-review-outcome="status" checked> Transaction / payout status</label>
-      <label class="review-check"><input type="checkbox" data-review-outcome="ticket" checked> Support ticket</label>
-      <label class="review-check"><input type="checkbox" data-review-outcome="callback" checked> Specialist callback</label>
-    </fieldset>
-    <div>
-      <label for="rv-status">G4 · Status card sample</label>
-      <select id="rv-status" data-review="status-sample">
-        <option value="live">Demo call · TXN-9001, verified, delayed</option>
-        <option value="ref-future">1 · Transaction, reference only, future arrival</option>
-        <option value="ref-past">2 · Transaction, reference only, past arrival</option>
-        <option value="payout-failed">3 · Payout failed, verified, with callback</option>
-        <option value="verified-tx">4 · Transaction, verified, no escalation</option>
-        <option value="all">All four samples</option>
-      </select>
-    </div>
-    <div>
-      <label for="rv-form">K · Contact details form</label>
-      <select id="rv-form" data-review="form">
-        <option value="hidden">Hidden</option>
-        <option value="standard">Standard caller</option>
-        <option value="verified">Verified caller (email on file)</option>
-        <option value="verified-edit">Verified · different email</option>
-        <option value="errors">Validation errors</option>
-        <option value="submitted">Details received</option>
-      </select>
-    </div>
-    <div class="review-toolbar__row">
-      <button class="review-btn" type="button" data-review="transcript">H · Open transcript</button>
-      <button class="review-btn" type="button" data-review="demo">Play demo call</button>
-    </div>
-    <label class="review-check"><input type="checkbox" data-review="all"> Show every panel state stacked</label>
-  </div>
-</div>
 
 <script src="app.js"></script>
 <script src="shared-cases.js"></script>

@@ -17,10 +17,6 @@
   --c-error: #A3312A;
   --c-error-wash: #FBF4F3;
   --c-scrim: rgba(14, 42, 71, 0.24);
-  --c-review-bg: #1B2430;
-  --c-review-text: #FFFFFF;
-  --c-review-muted: #AEB6C0;
-  --c-review-line: #3A4552;
 
   /* Type */
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -346,47 +342,6 @@ fieldset.field { border: 0; margin: 0; padding: 0; }
 .transcript-list__text { font-size: var(--fs-sm); line-height: 1.6; text-wrap: pretty; }
 .transcript-drawer__foot { padding: var(--s-4) var(--s-5); border-top: var(--hairline); font-size: var(--fs-xs); color: var(--c-text-2); }
 
-/* Preview states toolbar (design review only) ---------------------------- */
-.review-toolbar {
-  position: fixed; right: var(--s-4); bottom: var(--s-4); z-index: 60; width: 300px; max-height: calc(100vh - 32px);
-  display: flex; flex-direction: column;
-  background: var(--c-review-bg); color: var(--c-review-text); border-radius: var(--r-2);
-  font-size: var(--fs-xs); line-height: 1.4; outline: 1px dashed var(--c-review-muted); outline-offset: 3px;
-}
-.review-toolbar__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4); border-bottom: 1px solid var(--c-review-line); }
-.review-toolbar__title { font-weight: var(--fw-medium); letter-spacing: .04em; text-transform: uppercase; font-size: 11px; }
-.review-toolbar__sub { color: var(--c-review-muted); font-size: 11px; }
-.review-toolbar__toggle { min-height: var(--tap); padding: 0 var(--s-3); background: none; border: 1px solid var(--c-review-line); border-radius: var(--r-1); color: var(--c-review-text); font-size: var(--fs-xs); }
-.review-toolbar__body { padding: var(--s-3) var(--s-4) var(--s-4); display: grid; gap: var(--s-3); overflow-y: auto; }
-.review-toolbar.is-collapsed .review-toolbar__body { display: none; }
-.review-toolbar.is-collapsed { width: auto; }
-.review-toolbar.is-collapsed .review-toolbar__head { border-bottom: 0; }
-.review-toolbar label, .review-toolbar legend { color: var(--c-review-muted); display: block; margin-bottom: var(--s-1); }
-.review-toolbar fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
-.review-toolbar select {
-  width: 100%; min-height: 36px; padding: 0 var(--s-2); background: var(--c-review-bg); color: var(--c-review-text);
-  border: 1px solid var(--c-review-line); border-radius: var(--r-1);
-}
-.review-seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--c-review-line); border-radius: var(--r-1); overflow: hidden; }
-.review-seg button { min-height: 36px; background: none; border: 0; color: var(--c-review-text); font-size: var(--fs-xs); }
-.review-seg button + button { border-left: 1px solid var(--c-review-line); }
-.review-seg button[aria-pressed="true"] { background: var(--c-review-text); color: var(--c-review-bg); }
-.review-check { display: flex !important; align-items: center; gap: var(--s-2); color: var(--c-review-text) !important; min-height: 28px; margin: 0 !important; }
-.review-check input { accent-color: var(--c-accent); width: 16px; height: 16px; margin: 0; }
-.review-toolbar__row { display: flex; gap: var(--s-2); flex-wrap: wrap; }
-.review-btn { min-height: 36px; padding: 0 var(--s-3); background: none; border: 1px solid var(--c-review-line); border-radius: var(--r-1); color: var(--c-review-text); font-size: var(--fs-xs); }
-.review-btn:hover, .review-toolbar__toggle:hover { border-color: var(--c-review-muted); }
-.review-toolbar :focus-visible { outline-color: #5FB3C1; }
-
-/* "Show every state" review mode */
-.review-all .call-state[hidden] { display: block !important; }
-.review-all .call-state { border-bottom: 1px dashed var(--c-line); }
-.review-all .call-state::before {
-  content: attr(data-review-label); display: inline-block; margin-bottom: var(--s-4);
-  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--c-text-2);
-  border: 1px dashed var(--c-text-2); border-radius: var(--r-1); padding: 2px 6px;
-}
-
 /* Responsive ------------------------------------------------------------- */
 @media (max-width: 960px) {
   .hero__grid { column-gap: var(--s-6); }
@@ -419,8 +374,6 @@ fieldset.field { border: 0; margin: 0; padding: 0; }
     top: auto; left: 0; width: 100%; height: 85vh; border-left: 0; border-top: var(--hairline);
     border-radius: var(--r-2) var(--r-2) 0 0; transform: translateY(100%);
   }
-  .review-toolbar { left: var(--s-2); right: var(--s-2); bottom: var(--s-2); width: auto; }
-  .review-toolbar.is-collapsed { left: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {
