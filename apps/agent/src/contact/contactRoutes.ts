@@ -16,8 +16,7 @@ interface ContactSubmissionBody {
   callbackTime?: unknown;
 }
 
-export function registerContactRoutes(router: Router): void {
-  router.post("/api/calls/:callId/contact", async (req: Request, res: Response) => {
+async function handleContactSubmission(req: Request, res: Response): Promise<void> {
     const { callId } = req.params;
     const body = req.body as ContactSubmissionBody;
 
@@ -71,6 +70,18 @@ export function registerContactRoutes(router: Router): void {
     });
 
     res.status(200).json({ stored: true });
+}
+
+export function registerContactRoutes(router: Router): void {
+  router.post("/api/calls/:callId/contact", async (req: Request, res: Response) => {
+    try {
+      await handleContactSubmission(req, res);
+    } catch (error) {
+      // Never let one bad request crash the process — see the same fix in
+      // vapi/customLlm.ts for why this matters.
+      console.error("contactRoutes: unhandled error", error);
+      if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+    }
   });
 }
 

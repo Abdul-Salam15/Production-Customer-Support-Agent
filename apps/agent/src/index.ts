@@ -28,6 +28,17 @@ app.get("/api/config", (_req, res) => {
 // Customer site and specialist queue site are one deployed service (Phase 5).
 app.use(express.static(join(__dirname, "..", "public")));
 
+// Last-resort safety net: every route already wraps its own async work in
+// try/catch (an unhandled rejection would otherwise kill this whole process
+// by default, taking down every other in-progress call with it), but this
+// catches anything missed rather than silently going down.
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection (process kept alive):", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("Uncaught exception (process kept alive):", error);
+});
+
 const env = getEnv();
 app.listen(env.PORT, () => {
   console.log(`Agent backend listening on port ${env.PORT}`);

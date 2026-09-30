@@ -72,8 +72,7 @@ async function deriveFinalStatus(conversationId: string): Promise<{ status: Fina
   return { status: "abandoned", summary: "Call ended without a resolution." };
 }
 
-export function registerVapiEventsRoute(router: Router): void {
-  router.post("/vapi/events", verifySecret, async (req: Request, res: Response) => {
+async function handleEndOfCallReport(req: Request, res: Response): Promise<void> {
     const body = req.body as VapiEndOfCallReport;
 
     if (body.message?.type !== "end-of-call-report") {
@@ -120,6 +119,18 @@ export function registerVapiEventsRoute(router: Router): void {
     }
 
     res.status(200).json({ received: true });
+}
+
+export function registerVapiEventsRoute(router: Router): void {
+  router.post("/vapi/events", verifySecret, async (req: Request, res: Response) => {
+    try {
+      await handleEndOfCallReport(req, res);
+    } catch (error) {
+      // Never let one bad webhook delivery crash the process — see the same
+      // fix in vapi/customLlm.ts for why this matters.
+      console.error("vapi/events: unhandled error", error);
+      if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+    }
   });
 }
 

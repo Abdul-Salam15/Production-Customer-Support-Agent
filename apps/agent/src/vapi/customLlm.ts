@@ -269,54 +269,53 @@ interface ToolResultBlock {
   content: unknown;
 }
 
-export function registerCustomLlmRoute(router: Router): void {
-  router.post("/vapi/chat/completions", bearerAuth, async (req: Request, res: Response) => {
-    const env = getEnv();
-    const body = req.body as VapiChatCompletionRequest;
+async function handleTurn(req: Request, res: Response): Promise<void> {
+  const env = getEnv();
+  const body = req.body as VapiChatCompletionRequest;
 
-    if (!Array.isArray(body?.messages) || body.messages.length === 0) {
-      res.status(400).json({ error: "messages is required" });
-      return;
-    }
+  if (!Array.isArray(body?.messages) || body.messages.length === 0) {
+    res.status(400).json({ error: "messages is required" });
+    return;
+  }
 
-    const callId = body.call?.id ?? `manual-test-${Date.now()}`;
-    const userMessage = lastUserMessage(body.messages);
-    if (!userMessage) {
-      res.status(400).json({ error: "no user message found" });
-      return;
-    }
+  const callId = body.call?.id ?? `manual-test-${Date.now()}`;
+  const userMessage = lastUserMessage(body.messages);
+  if (!userMessage) {
+    res.status(400).json({ error: "no user message found" });
+    return;
+  }
 
-    let session = getSession(callId);
-    let prompt: string;
+  let session = getSession(callId);
+  let prompt: string;
 
-    if (session) {
-      prompt = userMessage.content;
-    } else {
-      const conversationId = await upsertConversation(callId);
-      session = createSession(callId, conversationId);
-      prompt = buildPromptFromHistory(body.messages);
-    }
+  if (session) {
+    prompt = userMessage.content;
+  } else {
+    const conversationId = await upsertConversation(callId);
+    session = createSession(callId, conversationId);
+    prompt = buildPromptFromHistory(body.messages);
+  }
 
-    const conversationId = session.conversationId;
-    const guardContext = await buildGuardContext(conversationId, userMessage.content);
-    const guard = new OutputGuard(guardContext);
-    const abortController = createAbortController(req, res);
+  const conversationId = session.conversationId;
+  const guardContext = await buildGuardContext(conversationId, userMessage.content);
+  const guard = new OutputGuard(guardContext);
+  const abortController = createAbortController(req, res);
 
-    res.status(200);
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.flushHeaders?.();
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
 
-    const chunkId = newChunkId();
-    const modelName = body.model ?? env.ANTHROPIC_MODEL;
-    const tagBuffer = createTagStrippingBuffer();
-    const pendingToolUses = new Map<string, string>();
+  const chunkId = newChunkId();
+  const modelName = body.model ?? env.ANTHROPIC_MODEL;
+  const tagBuffer = createTagStrippingBuffer();
+  const pendingToolUses = new Map<string, string>();
 
-    let finalText = "";
-    let sawResult = false;
+  let finalText = "";
+  let sawResult = false;
 
-    try {
+  try {
       const q = query({
         prompt,
         options: {
@@ -417,6 +416,25 @@ export function registerCustomLlmRoute(router: Router): void {
         tag.answerType,
         tag.confidence
       );
+    }
+}
+
+export function registerCustomLlmRoute(router: Router): void {
+  router.post("/vapi/chat/completions", bearerAuth, async (req: Request, res: Response) => {
+    try {
+      await handleTurn(req, res);
+    } catch (error) {
+      // A single failed request must never take down the process — every
+      // other in-progress or future call shares this server. Anything
+      // thrown here before or around the query() loop (a Supabase hiccup,
+      // a bad request) would otherwise become an unhandled rejection, and
+      // Node kills the whole process on those by default.
+      console.error("customLlm: unhandled error while processing turn", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "internal_error" });
+      } else if (!res.writableEnded) {
+        res.end();
+      }
     }
   });
 }
