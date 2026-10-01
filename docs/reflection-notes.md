@@ -225,3 +225,18 @@
   `queue.js`'s case actions needed a different approach than a plain disable-the-clicked-button,
   since `render()` replaces the whole detail pane's innerHTML on every action — a `ui.actionBusy`
   flag is threaded through `actionsHTML()` instead, checked again on each render.
+- Once failed sends became visible in the Audit Logs tab (the fix above), the real cause of
+  "still no email" showed up immediately: `connect ENETUNREACH 2607:f8b0:...` — an IPv6 address,
+  not a credentials error. `smtp.gmail.com` resolves to both an IPv4 and an IPv6 address; Node
+  18+ no longer resolves DNS IPv4-first by default, Render's containers have no outbound IPv6
+  route, and nodemailer doesn't itself retry on a different address family after a connection
+  attempt fails. Fixed with `dns.setDefaultResultOrder("ipv4first")` called once at the very top
+  of each app's entry point (before any other imports that might open a connection) — forces
+  every `dns.lookup` in the process to prefer IPv4, process-wide, rather than patching
+  nodemailer's transport options directly.
+- Also fixed while investigating: the Tool Calls table was rendering oldest-first —
+  `GET /api/dashboard/tool-calls` already orders newest-first server-side, but
+  `renderToolCallTable()` was reversing that a second time (copy-pasted from the live feed's own
+  reverse, where it's correct because that endpoint returns oldest-first). And the table had no
+  scroll boundary of its own, so on a narrower viewport the Status/Time columns were pushed
+  completely out of reach rather than reachable via a contained horizontal scrollbar.

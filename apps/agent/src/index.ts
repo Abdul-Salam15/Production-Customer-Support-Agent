@@ -1,6 +1,14 @@
 import { loadEnv, getEnv } from "./env.js";
 loadEnv();
 
+import { setDefaultResultOrder } from "node:dns";
+// Render's containers have no outbound IPv6 route; Node 18+ otherwise tries
+// a resolved IPv6 address first and fails with ENETUNREACH before ever
+// falling back to IPv4 — this hit Gmail SMTP specifically (smtp.gmail.com
+// resolves to both). Forces every dns.lookup in this process to prefer
+// IPv4, process-wide.
+setDefaultResultOrder("ipv4first");
+
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";

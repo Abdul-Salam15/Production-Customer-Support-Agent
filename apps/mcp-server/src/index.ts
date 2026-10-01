@@ -5,6 +5,14 @@ import { config as loadEnv } from "dotenv";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 loadEnv({ path: join(__dirname, "..", ".env") });
 
+import { setDefaultResultOrder } from "node:dns";
+// Render's containers have no outbound IPv6 route; Node 18+ otherwise tries
+// a resolved IPv6 address first and fails with ENETUNREACH before ever
+// falling back to IPv4 — this hit Gmail SMTP specifically (smtp.gmail.com
+// resolves to both). Forces every dns.lookup in this process to prefer
+// IPv4, process-wide.
+setDefaultResultOrder("ipv4first");
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
