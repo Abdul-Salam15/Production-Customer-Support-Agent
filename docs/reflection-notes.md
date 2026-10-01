@@ -272,3 +272,16 @@
   like Gmail needed). Unlike the port-465 fix, this one could not be verified end-to-end from
   this environment — no real Brevo account/API key was available here — so it's unverified until
   the user tests it against their own Render deployment with a real key.
+- Known, accepted limitation (not a bug): `EMAIL_FROM` is a `@gmail.com` address, and Brevo
+  flags it accordingly — "DMARC: Freemail domain is not recommended." Gmail's own DMARC policy
+  tells every receiving mail server to reject or quarantine mail claiming `From: ...@gmail.com`
+  that didn't actually originate from Google's infrastructure, regardless of which third-party
+  provider relays it or whether that provider has verified the sender owns the inbox. The first
+  test send (before the sender was verified in Brevo) got silently rerouted through Brevo's own
+  `brevosend.com` sandbox domain and was never seen in the recipient's inbox or spam — consistent
+  with either DMARC enforcement or the sandbox domain's own lack of sender reputation. The only
+  durable fix is sending from a domain the user controls DNS for (adding Brevo's provided SPF/
+  DKIM DNS records there); the user chose to keep the gmail.com sender for now and accept
+  reduced/unreliable deliverability rather than acquire a domain. If outbound email reliability
+  becomes a real requirement later, revisit this — it is not something further code changes can
+  fix.

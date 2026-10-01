@@ -217,6 +217,14 @@ blocked.
    from (Brevo emails you a confirmation link). Use that exact address as `EMAIL_FROM`.
 3. **Settings → SMTP & API → API Keys** — create a new API key and use it as `BREVO_API_KEY`.
 
+**Deliverability note:** if `EMAIL_FROM` is a `@gmail.com`/`@yahoo.com`/`@outlook.com` address,
+expect emails to be unreliable — these providers publish a strict DMARC policy that tells every
+receiving mail server to reject or quarantine mail claiming to be from their domain that didn't
+actually come from their own infrastructure, regardless of which provider relays it or whether
+that provider has verified you own the inbox. The durable fix is sending from a domain you
+control DNS for — add it under **Senders, Domains & Dedicated IPs → Domains** in Brevo, add the
+SPF/DKIM records it gives you to that domain's DNS, and set `EMAIL_FROM` to an address on it.
+
 ### F2. Deploy `agent-backend`
 
 Same flow as F1, with:
