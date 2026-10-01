@@ -9,6 +9,7 @@ import { createVapiEventsRouter } from "./vapi/events.js";
 import { createContactRouter } from "./contact/contactRoutes.js";
 import { createCallEventsRouter } from "./realtime/callEvents.js";
 import { createDashboardRouter } from "./dashboard/routes.js";
+import { createCustomerRouter } from "./customer/routes.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +20,7 @@ app.use(createVapiEventsRouter());
 app.use(createContactRouter());
 app.use(createCallEventsRouter());
 app.use(createDashboardRouter());
+app.use(createCustomerRouter());
 
 // Browser-exposed, not secret (Section 3) — lets app.js initialize the Vapi
 // Web SDK, and support-queue.html initialize a Supabase Auth session,
@@ -49,6 +51,14 @@ app.get("/health", (_req, res) => {
 // profile's role — not whichever of these paths was used to arrive here.
 app.get(["/login", "/admin", "/specialist"], (_req, res) => {
   res.sendFile(join(__dirname, "..", "public", "support-queue.html"));
+});
+
+// Customer-facing signup + "my calls" — separate page, separate account
+// type (customer_accounts) from staff's. /login (above) redirects here via
+// GET /api/whoami once it knows a freshly signed-in session is a customer,
+// not staff.
+app.get(["/signup", "/customer"], (_req, res) => {
+  res.sendFile(join(__dirname, "..", "public", "customer-account.html"));
 });
 
 // Customer site and specialist queue site are one deployed service (Phase 5).

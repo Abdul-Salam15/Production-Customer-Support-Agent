@@ -72,6 +72,12 @@
     try { return (await api('/api/dashboard/me')).profile; }
     catch (e) { return null; }
   }
+  // /login is universal — staff and customers both authenticate here, then
+  // get routed by whoami() to /admin, /specialist or /customer.
+  async function whoami() {
+    try { return await api('/api/whoami'); }
+    catch (e) { return null; }
+  }
   async function fetchTeam() {
     var data = await api('/api/dashboard/team');
     return data.team.map(mapProfile);
@@ -195,14 +201,16 @@
   }, async function () {
     var email = val('#login-email'), password = $('#login-password').value;
     var signInResult = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
-    var me = signInResult.error ? null : await fetchMe();
-    if (!me) {
+    var who = signInResult.error ? null : await whoami();
+    if (!who) {
       loginErr.hidden = false;
       $('#login-password').value = '';
       $('#login-password').focus();
       return;
     }
-    loginErr.hidden = true; login.reset(); signIn(me);
+    loginErr.hidden = true; login.reset();
+    if (who.kind === 'customer') { location.href = '/customer'; return; }
+    signIn(who.profile);
   });
   $('[data-login-form]').addEventListener('input', function () { loginErr.hidden = true; });
 
@@ -239,6 +247,21 @@
   }
 
   function resetAuthForms() { login.reset(); loginErr.hidden = true; }
+
+  /* ---------- Password visibility toggle (shared by every password field) ---------- */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-action="toggle-password"]');
+    if (!b) return;
+    var field = b.closest('.password-field');
+    var input = field && field.querySelector('input');
+    if (!input) return;
+    var show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.setAttribute('aria-pressed', show ? 'true' : 'false');
+    b.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    $('svg[data-icon="eye"]', b).hidden = show;
+    $('svg[data-icon="eye-off"]', b).hidden = !show;
+  });
 
   /* ---------- Team table ---------- */
   var PENCIL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L5 14H2v-3z"/></svg>';
@@ -572,8 +595,9 @@
 
     var sessionResult = await supabaseClient.auth.getSession();
     if (sessionResult.data && sessionResult.data.session) {
-      var me = await fetchMe();
-      if (me) { signIn(me); return; }
+      var who = await whoami();
+      if (who && who.kind === 'customer') { location.href = '/customer'; return; }
+      if (who && who.kind === 'staff') { signIn(who.profile); return; }
     }
     show('login');
   })();

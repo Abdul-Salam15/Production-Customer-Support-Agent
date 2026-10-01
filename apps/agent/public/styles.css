@@ -250,6 +250,17 @@ fieldset.field { border: 0; margin: 0; padding: 0; }
 .field--invalid .field__input, .field__input[aria-invalid="true"] { border-color: var(--c-error); }
 .field__error { font-size: var(--fs-sm); color: var(--c-error); }
 .field__hint { font-size: var(--fs-xs); color: var(--c-text-2); }
+
+.password-field { position: relative; }
+.password-field .field__input { padding-right: 44px; }
+.password-toggle {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  width: 36px; height: 36px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--r-1); background: none; color: var(--c-text-2);
+}
+.password-toggle:hover { color: var(--c-primary); background: var(--c-bg); }
+.password-toggle:focus-visible { outline: var(--focus); outline-offset: 1px; }
+.password-toggle svg { width: 18px; height: 18px; }
 .contact-form__when { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.8fr) minmax(0, 1.4fr); gap: var(--s-2); }
 .contact-form__on-file { display: grid; gap: 4px; }
 .contact-form__on-file-text { font-size: var(--fs-sm); color: var(--c-text-2); text-wrap: pretty; }

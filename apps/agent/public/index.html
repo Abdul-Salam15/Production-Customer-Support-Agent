@@ -22,14 +22,9 @@
     </div>
     <div class="site-header__nav">
       <a class="site-header__link" href="#how-this-works">How this works</a>
-      <div class="site-header__account" data-account-out>
-        <a class="site-header__auth-link" href="#login">Log in</a>
-        <a class="site-header__auth-link" href="#signup">Sign up</a>
-      </div>
-      <div class="site-header__account site-header__account--in" data-account-in hidden>
-        <span class="site-header__who"><span class="site-header__name" data-account-name>Amara</span><span class="site-header__count tabular" data-account-count>4 calls</span></span>
-        <a class="site-header__auth-link" href="#history">Call history</a>
-        <button class="site-header__auth-link site-header__auth-link--button" type="button" data-action="log-out">Log out</button>
+      <div class="site-header__account">
+        <a class="site-header__auth-link" href="/login">Log in</a>
+        <a class="site-header__auth-link" href="/signup">Sign up</a>
       </div>
     </div>
   </div>
@@ -421,78 +416,6 @@
   </section>
 </main>
 
-<!-- Customer: Log in -->
-<main class="account-view" data-view="login" aria-labelledby="cl-title" hidden>
-  <div class="container account-view__inner">
-    <div class="account-panel">
-      <h1 class="account-panel__title" id="cl-title" tabindex="-1" data-view-heading>Log in</h1>
-      <p class="account-panel__text">See your past calls and their status. You don't need an account to call.</p>
-      <form class="account-form" data-customer-login novalidate>
-        <p class="account-form__error" role="alert" data-cl-error hidden>That email or password isn't right.</p>
-        <div class="field" data-field="email">
-          <label class="field__label" for="cl-email">Email</label>
-          <input class="field__input" id="cl-email" type="email" autocomplete="username" aria-describedby="cl-email-error">
-          <p class="field__error" id="cl-email-error" hidden></p>
-        </div>
-        <div class="field" data-field="password">
-          <label class="field__label" for="cl-password">Password</label>
-          <input class="field__input" id="cl-password" type="password" autocomplete="current-password" aria-describedby="cl-password-error">
-          <p class="field__error" id="cl-password-error" hidden></p>
-        </div>
-        <button class="btn btn--primary btn--block" type="submit">Log in</button>
-      </form>
-      <p class="account-panel__alt">No account? <a href="#signup">Sign up</a></p>
-      <p class="account-panel__proto">Prototype: log in as amara@lagosledger.example with the password relaypay-demo.</p>
-    </div>
-  </div>
-</main>
-
-<!-- Customer: Sign up -->
-<main class="account-view" data-view="signup" aria-labelledby="cs-title" hidden>
-  <div class="container account-view__inner">
-    <div class="account-panel">
-      <h1 class="account-panel__title" id="cs-title" tabindex="-1" data-view-heading>Create an account</h1>
-      <p class="account-panel__text">Keep track of your calls with RelayPay support.</p>
-      <form class="account-form" data-customer-signup novalidate>
-        <div class="field" data-field="name">
-          <label class="field__label" for="cs-name">Full name</label>
-          <input class="field__input" id="cs-name" type="text" autocomplete="name" aria-describedby="cs-name-error">
-          <p class="field__error" id="cs-name-error" hidden></p>
-        </div>
-        <div class="field" data-field="email">
-          <label class="field__label" for="cs-email">Email</label>
-          <input class="field__input" id="cs-email" type="email" autocomplete="email" aria-describedby="cs-email-error">
-          <p class="field__error" id="cs-email-error" hidden></p>
-        </div>
-        <div class="field" data-field="password">
-          <label class="field__label" for="cs-password">Password</label>
-          <input class="field__input" id="cs-password" type="password" autocomplete="new-password" aria-describedby="cs-password-hint cs-password-error">
-          <p class="field__hint" id="cs-password-hint">At least 8 characters.</p>
-          <p class="field__error" id="cs-password-error" hidden></p>
-        </div>
-        <div class="field" data-field="confirm">
-          <label class="field__label" for="cs-confirm">Confirm password</label>
-          <input class="field__input" id="cs-confirm" type="password" autocomplete="new-password" aria-describedby="cs-confirm-error">
-          <p class="field__error" id="cs-confirm-error" hidden></p>
-        </div>
-        <button class="btn btn--primary btn--block" type="submit">Create account</button>
-      </form>
-      <p class="account-panel__alt">Already have an account? <a href="#login">Log in</a></p>
-    </div>
-  </div>
-</main>
-
-<!-- Customer: Call history -->
-<main class="account-view account-view--history" data-view="history" aria-labelledby="ch-title" hidden>
-  <div class="container history">
-    <a class="history__back" href="#">Back to voice support</a>
-    <h1 class="history__title" id="ch-title" tabindex="-1" data-view-heading>Call history</h1>
-    <p class="history__text">Your calls with RelayPay support, most recent first.</p>
-    <ol class="history-list" data-history-list></ol>
-    <p class="history__empty" data-history-empty hidden>No calls yet. Calls you make while logged in will show here.</p>
-  </div>
-</main>
-
 <!-- 8. Footer -->
 <footer class="site-footer">
   <div class="container site-footer__inner">
@@ -526,8 +449,6 @@
 </aside>
 
 <script src="app.js"></script>
-<script src="shared-cases.js"></script>
-<script src="customer.js"></script>
 <!-- Globe: isolated module. Page works fully without it. -->
 <script type="module" src="globe.js"></script>
 </body>

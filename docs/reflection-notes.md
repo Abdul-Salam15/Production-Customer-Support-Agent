@@ -156,3 +156,20 @@
   interactive DB-password input this non-interactive session can't provide. Apply it (or paste
   it into the Supabase SQL editor) before any of Phase 8's endpoints will work against real
   data.
+- Real customer accounts (signup/login/call history at `/signup` and `/customer`) were added
+  as a separate `customer_accounts` table/auth flow from staff's `profiles` — same Supabase
+  Auth mechanism (`auth.users`), two different "what kind of account is this" tables. `/login`
+  is universal for both: it signs in via Supabase first, then asks the new `GET /api/whoami`
+  which table the resulting user belongs to, and redirects accordingly (`/admin`/`/specialist`
+  for staff, `/customer` for customers). A customer's "calls" aren't stored against their
+  account directly — matched by email at read time against `customers.contact_email`,
+  `contact_submissions.email`, and `escalations.user_email`, the same three places an identity
+  already surfaces elsewhere in this schema. Migration `0009_customer_accounts.sql` needs
+  applying alongside `0008` before this works against real data.
+- The original customer-facing account system (`customer.js`, `shared-cases.js`, and the
+  `#login`/`#signup`/`#history` hash-routed views in `index.html`) was removed entirely rather
+  than kept alongside the real one — it was a fully local, unauthenticated prototype
+  (hardcoded `CUSTOMERS` array, plaintext password comparison) that looked identical to the
+  real staff login and caused a real mix-up (a real admin password typed into the fake
+  customer login, which silently rejected it). One login system per concern now: `/login` ->
+  `/api/whoami`-routed, `/signup` -> real `customer_accounts`.

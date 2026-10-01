@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your account · RelayPay</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="container site-header__inner">
+    <div class="site-header__brand">
+      <a class="wordmark" href="/">RelayPay</a>
+      <span class="site-header__label">Support</span>
+    </div>
+    <div class="site-header__nav">
+      <div class="site-header__account site-header__account--in" data-account-in hidden>
+        <span class="site-header__who"><span class="site-header__name" data-account-name></span></span>
+        <button class="site-header__auth-link site-header__auth-link--button" type="button" data-action="log-out">Log out</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Sign up -->
+<main class="account-view" data-screen="signup" hidden>
+  <div class="container account-view__inner">
+    <div class="account-panel">
+      <h1 class="account-panel__title" tabindex="-1" data-screen-heading>Create an account</h1>
+      <p class="account-panel__text">Keep track of your calls with RelayPay support.</p>
+      <form class="account-form" data-signup-form novalidate>
+        <p class="account-form__error" role="alert" data-signup-error hidden></p>
+        <div class="field" data-field="name">
+          <label class="field__label" for="cs-name">Full name</label>
+          <input class="field__input" id="cs-name" type="text" autocomplete="name" aria-describedby="cs-name-error">
+          <p class="field__error" id="cs-name-error" hidden></p>
+        </div>
+        <div class="field" data-field="email">
+          <label class="field__label" for="cs-email">Email</label>
+          <input class="field__input" id="cs-email" type="email" autocomplete="email" aria-describedby="cs-email-error">
+          <p class="field__error" id="cs-email-error" hidden></p>
+        </div>
+        <div class="field" data-field="password">
+          <label class="field__label" for="cs-password">Password</label>
+          <div class="password-field">
+            <input class="field__input" id="cs-password" type="password" autocomplete="new-password" aria-describedby="cs-password-hint cs-password-error">
+            <button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-pressed="false">
+              <svg data-icon="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg data-icon="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c7 0 10.5 7 10.5 7a13.2 13.2 0 0 1-3.1 4.1M6.6 6.6C3.4 8.6 1.5 12 1.5 12s3.5 7 10.5 7a10.6 10.6 0 0 0 4.2-.9"/><path d="M9.9 10a3 3 0 0 0 4.2 4.2"/></svg>
+            </button>
+          </div>
+          <p class="field__hint" id="cs-password-hint">At least 8 characters.</p>
+          <p class="field__error" id="cs-password-error" hidden></p>
+        </div>
+        <div class="field" data-field="confirm">
+          <label class="field__label" for="cs-confirm">Confirm password</label>
+          <div class="password-field">
+            <input class="field__input" id="cs-confirm" type="password" autocomplete="new-password" aria-describedby="cs-confirm-error">
+            <button class="password-toggle" type="button" data-action="toggle-password" aria-label="Show password" aria-pressed="false">
+              <svg data-icon="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg data-icon="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M3 3l18 18"/><path d="M10.6 5.1A10.9 10.9 0 0 1 12 5c7 0 10.5 7 10.5 7a13.2 13.2 0 0 1-3.1 4.1M6.6 6.6C3.4 8.6 1.5 12 1.5 12s3.5 7 10.5 7a10.6 10.6 0 0 0 4.2-.9"/><path d="M9.9 10a3 3 0 0 0 4.2 4.2"/></svg>
+            </button>
+          </div>
+          <p class="field__error" id="cs-confirm-error" hidden></p>
+        </div>
+        <button class="btn btn--primary btn--block" type="submit">Create account</button>
+      </form>
+      <p class="account-panel__alt">Already have an account? <a href="/login">Log in</a></p>
+    </div>
+  </div>
+</main>
+
+<!-- Call history -->
+<main class="account-view account-view--history" data-screen="history" hidden>
+  <div class="container history">
+    <a class="history__back" href="/">Back to voice support</a>
+    <h1 class="history__title" tabindex="-1" data-screen-heading>Call history</h1>
+    <p class="history__text">Your calls with RelayPay support, most recent first.</p>
+    <ol class="history-list" data-history-list></ol>
+    <p class="history__empty" data-history-empty hidden>No calls yet. Calls you make will show here.</p>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="customer-account.js"></script>
+</body>
+</html>
