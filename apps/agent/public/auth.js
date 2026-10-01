@@ -15,6 +15,14 @@
     });
   };
   var article = function (role) { return role === 'admin' ? 'an ' : 'a '; };
+  // Visual + a11y feedback for anything async: disables the button and
+  // shows a spinner (CSS, keyed off aria-busy) so clicking never looks like
+  // nothing happened while a request is in flight.
+  function setBusy(button, busy) {
+    if (!button) return;
+    button.disabled = !!busy;
+    button.setAttribute('aria-busy', busy ? 'true' : 'false');
+  }
 
   var TEAM = [];
   var findUser = function (email) {
@@ -169,10 +177,13 @@
     });
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      var submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn && submitBtn.getAttribute('aria-busy') === 'true') return;
       var first = null;
       Object.keys(rules).forEach(function (k) { if (!check(k, true) && !first) first = k; });
       if (first) { fieldEl(first).querySelector('input, select').focus(); return; }
-      onValid();
+      setBusy(submitBtn, true);
+      Promise.resolve(onValid()).finally(function () { setBusy(submitBtn, false); });
     });
     return {
       reset: function () {
@@ -371,11 +382,14 @@
     var row = e.target.closest('.team-row'), u = findUser(row.dataset.email);
     var input = $('#name-edit-input'), v = input.value.trim();
     if (!v) { input.setAttribute('aria-invalid', 'true'); $('#name-edit-error').hidden = false; input.focus(); return; }
+    var saveBtn = e.target.querySelector('.name-edit__save');
+    setBusy(saveBtn, true);
     saveName(u, v).then(function () {
       ui.editing = null; renderTeam();
       announce('Name updated to ' + v);
       $('.action-edit-name', rowFor(u.email)).focus();
     }).catch(function () {
+      setBusy(saveBtn, false);
       $('#name-edit-error').textContent = 'Could not save — try again.'; $('#name-edit-error').hidden = false;
     });
   });
@@ -437,7 +451,7 @@
   }
   $('[data-role-confirm]').addEventListener('click', async function () {
     var p = ui.pending; if (!p || roleBusy) return;
-    roleBusy = true;
+    roleBusy = true; setBusy(this, true);
     try {
       await api('/api/dashboard/team/' + encodeURIComponent(p.user.id) + '/role', { method: 'PATCH', body: { role: p.role } });
       p.user.role = p.role;
@@ -451,7 +465,7 @@
         ? 'This would leave RelayPay support with no admins, so this change was not made.'
         : 'Could not change this role — try again.';
     } finally {
-      roleBusy = false;
+      roleBusy = false; setBusy(this, false);
     }
   });
   $$('[data-role-cancel]').forEach(function (b) { b.addEventListener('click', function () { closeRole(); }); });
@@ -492,7 +506,7 @@
   }
   $('[data-remove-confirm]').addEventListener('click', async function () {
     var u = rmUser; if (!u || rmBusy) return;
-    rmBusy = true;
+    rmBusy = true; setBusy(this, true);
     try {
       await api('/api/dashboard/team/' + encodeURIComponent(u.id), { method: 'DELETE' });
       TEAM.splice(TEAM.indexOf(u), 1);
@@ -507,7 +521,7 @@
         ? 'This would leave RelayPay support with no admins, so this person was not removed.'
         : 'Could not remove this person — try again.';
     } finally {
-      rmBusy = false;
+      rmBusy = false; setBusy(this, false);
     }
   });
   $$('[data-remove-cancel]').forEach(function (b) { b.addEventListener('click', function () { closeRemove(); }); });

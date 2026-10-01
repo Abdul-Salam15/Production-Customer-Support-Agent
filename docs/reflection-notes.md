@@ -208,3 +208,20 @@
   often settles into "load once, stop" rather than truly live-updating; it's still built to
   update in real time for the case where a specialist has the case open while the call is
   still going.
+- Real bug found via user report: "Confirm change" on a role change appeared to do nothing.
+  Root cause — `await sendEmail(...)` (and the equivalent in resolve/escalation-create/call-
+  summary) sat directly in the request path before responding; with `GMAIL_USER`/
+  `GMAIL_APP_PASSWORD` still placeholders, the SMTP connection attempt stalls, and with zero
+  loading feedback on the button, a multi-second-to-minutes-long hang looked identical to a
+  dead click. Fixed by making every such send fire-and-forget (`sendEmail(...).catch(...)`,
+  never `await`ed) in `createEscalation.ts`, `vapi/events.ts`, and both dashboard handlers
+  (resolve, role-change) — the HTTP/tool-call response no longer waits on Gmail at all, which
+  was the real fix, not just a UX band-aid. Paired with it: every async button in the app
+  (login, signup, set-password, invite, role-change confirm, remove confirm, name edit, and
+  every case action in the queue) now sets `aria-busy="true"` + `disabled` while in flight, via
+  a shared `setBusy()` helper and a `bindForm()` change that applies it automatically to any
+  form's submit button — a CSS rule keyed off `[aria-busy="true"]` draws a small spinner using
+  `currentColor`, so it looks right on every button variant without per-button color rules.
+  `queue.js`'s case actions needed a different approach than a plain disable-the-clicked-button,
+  since `render()` replaces the whole detail pane's innerHTML on every action — a `ui.actionBusy`
+  flag is threaded through `actionsHTML()` instead, checked again on each render.

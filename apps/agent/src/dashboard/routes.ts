@@ -402,7 +402,10 @@ function registerCaseRoutes(router: Router): void {
         return;
       }
 
-      await notifyCaseResolved(supabase, { ...found, row: data });
+      // Not awaited — notifyCaseResolved already try/catches its own send
+      // internally, but a slow/hanging Gmail connection must not delay the
+      // resolve response itself.
+      void notifyCaseResolved(supabase, { ...found, row: data });
 
       const resolver = getStaffUser(req);
       void logAudit("case", `${resolver.fullName ?? resolver.email} marked case ${req.params.reference} resolved.`);
@@ -662,21 +665,23 @@ function registerTeamRoutes(router: Router): void {
         return;
       }
 
-      try {
-        await sendEmail({
-          to: target.email,
-          subject: "Your RelayPay role has changed",
-          text: [
-            `Hi ${target.full_name ?? ""},`.trim(),
-            ``,
-            `Your role was changed from ${target.role} to ${role} by ${staffUser.fullName ?? staffUser.email}.`,
-            ``,
-            `— RelayPay Support`,
-          ].join("\n"),
-        });
-      } catch (emailError) {
+      // Not awaited: a slow/hanging Gmail connection must not delay this
+      // response — this is exactly what made the Confirm change button
+      // look broken (it was just waiting on an email send with zero
+      // feedback) when GMAIL_USER/GMAIL_APP_PASSWORD are still placeholders.
+      sendEmail({
+        to: target.email,
+        subject: "Your RelayPay role has changed",
+        text: [
+          `Hi ${target.full_name ?? ""},`.trim(),
+          ``,
+          `Your role was changed from ${target.role} to ${role} by ${staffUser.fullName ?? staffUser.email}.`,
+          ``,
+          `— RelayPay Support`,
+        ].join("\n"),
+      }).catch((emailError) => {
         console.error("dashboard: role-change email failed", emailError);
-      }
+      });
 
       void logAudit(
         "team",

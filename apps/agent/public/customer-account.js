@@ -66,6 +66,12 @@
   });
 
   /* ---------- Form validation helper (small, self-contained copy of auth.js's) ---------- */
+  function setBusy(button, busy) {
+    if (!button) return;
+    button.disabled = !!busy;
+    button.setAttribute('aria-busy', busy ? 'true' : 'false');
+  }
+
   function bindForm(form, rules, onValid) {
     var touched = {};
     function fieldEl(k) { return form.querySelector('[data-field="' + k + '"]'); }
@@ -88,10 +94,13 @@
     });
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      var submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn && submitBtn.getAttribute('aria-busy') === 'true') return;
       var first = null;
       Object.keys(rules).forEach(function (k) { if (!check(k, true) && !first) first = k; });
       if (first) { fieldEl(first).querySelector('input').focus(); return; }
-      onValid();
+      setBusy(submitBtn, true);
+      Promise.resolve(onValid()).finally(function () { setBusy(submitBtn, false); });
     });
     return { reset: function () { form.reset(); touched = {}; Object.keys(rules).forEach(function (k) { check(k); }); } };
   }

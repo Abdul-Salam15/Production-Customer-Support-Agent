@@ -43,7 +43,7 @@
   }
 
   /* ---------- UI state ---------- */
-  var ui = { status: 'open', category: 'all', priority: 'all', selected: null, noteOpen: false, pendingClose: {} };
+  var ui = { status: 'open', category: 'all', priority: 'all', selected: null, noteOpen: false, pendingClose: {}, actionBusy: false };
 
   function visibleCases() {
     return CASES.filter(function (c) {
@@ -150,18 +150,22 @@
       '<span class="case-transcript__text">' + esc(t.text) + '</span></li>';
   }
 
+  function busyAttrs(label) {
+    return ui.actionBusy ? ' disabled aria-busy="true"' : '';
+  }
   function actionsHTML(c) {
+    var busy = busyAttrs();
     if (c.status === 'closed') {
       return '<span class="case-actions__resolved"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>Resolved ' + relTime(c.resolvedAt) + (c.claimedBy ? ' by ' + esc(c.claimedBy) : '') + '</span>' +
-        '<button class="btn btn--secondary action-note" type="button" data-act="note" aria-expanded="' + ui.noteOpen + '">Add note</button>';
+        '<button class="btn btn--secondary action-note" type="button" data-act="note" aria-expanded="' + ui.noteOpen + '"' + busy + '>Add note</button>';
     }
     var claim = c.claimedBy
       ? '<span class="case-actions__claimed action-claimed"><span class="case-actions__claimed-text">Claimed by<strong>' + (c.claimedBy === CURRENT_USER ? 'you (' + esc(CURRENT_USER) + ')' : esc(c.claimedBy)) + '</strong></span>' +
-        '<button class="case-actions__unclaim action-unclaim" type="button" data-act="unclaim" aria-label="Unclaim ' + c.reference + '">Unclaim</button></span>'
-      : '<button class="btn btn--primary action-claim" type="button" data-act="claim">Claim case</button>';
+        '<button class="case-actions__unclaim action-unclaim" type="button" data-act="unclaim" aria-label="Unclaim ' + c.reference + '"' + busy + '>Unclaim</button></span>'
+      : '<button class="btn btn--primary action-claim" type="button" data-act="claim"' + busy + '>Claim case</button>';
     return claim +
-      '<button class="btn btn--secondary action-note" type="button" data-act="note" aria-expanded="' + ui.noteOpen + '" aria-controls="note-form">Add note</button>' +
-      '<button class="btn btn--success action-resolve" type="button" data-act="resolve">Mark resolved</button>';
+      '<button class="btn btn--secondary action-note" type="button" data-act="note" aria-expanded="' + ui.noteOpen + '" aria-controls="note-form"' + busy + '>Add note</button>' +
+      '<button class="btn btn--success action-resolve" type="button" data-act="resolve"' + busy + '>Mark resolved</button>';
   }
 
   function fmtToolCallTime(iso) {
@@ -211,7 +215,7 @@
               '<span class="case-detail__category">' + c.category.charAt(0).toUpperCase() + c.category.slice(1) + '</span>' +
               '<span class="case-detail__meta-sep" aria-hidden="true"></span>' +
               '<span class="status-label status-label--' + statusKey + '">' + STATUS_LABEL[statusKey] + '</span>' +
-              (c.status === 'closed' ? '<button class="case-detail__reopen action-reopen" type="button" data-act="reopen" aria-label="Mark ' + c.reference + ' unresolved">Mark unresolved</button>' : '') +
+              (c.status === 'closed' ? '<button class="case-detail__reopen action-reopen" type="button" data-act="reopen" aria-label="Mark ' + c.reference + ' unresolved"' + busyAttrs() + '>Mark unresolved</button>' : '') +
             '</div>' +
           '</div>' +
           '<p class="case-detail__created">Created by voice agent<br><span class="tabular">' + absTime(c.createdAt) + ' · ' + relTime(c.createdAt) + '</span></p>' +
@@ -221,8 +225,8 @@
         '<form class="note-form" id="note-form" data-note-form' + (ui.noteOpen ? '' : ' hidden') + '>' +
           '<label class="sr-only" for="note-input">Note</label>' +
           '<input class="note-form__input" id="note-input" type="text" placeholder="Add a note for this case" maxlength="280" autocomplete="off">' +
-          '<button class="btn btn--primary action-note-save" type="submit">Save</button>' +
-          '<button class="btn btn--text" type="button" data-act="note-cancel">Cancel</button>' +
+          '<button class="btn btn--primary action-note-save" type="submit"' + busyAttrs() + '>Save</button>' +
+          '<button class="btn btn--text" type="button" data-act="note-cancel"' + busyAttrs() + '>Cancel</button>' +
         '</form>' +
         '<div class="case-detail__body">' +
           '<section class="detail-section"><h2 class="detail-section__title">Details</h2>' +
@@ -361,22 +365,40 @@
     var b = e.target.closest('[data-act]');
     var c = ui.selected && find(ui.selected);
     if (!b || !c) return;
+    if (ui.actionBusy && b.dataset.act !== 'note' && b.dataset.act !== 'note-cancel') return;
     switch (b.dataset.act) {
-      case 'claim': await claim(c); render(); break;
-      case 'reopen': await reopen(c); render(); var ab = $('.action-claim') || $('.action-resolve'); if (ab) ab.focus(); break;
-      case 'unclaim': await unclaim(c); render(); var cb = $('.action-claim'); if (cb) cb.focus(); break;
+      case 'claim': ui.actionBusy = true; render(); await claim(c); ui.actionBusy = false; render(); break;
+      case 'reopen':
+        ui.actionBusy = true; render();
+        await reopen(c);
+        ui.actionBusy = false; render();
+        var ab = $('.action-claim') || $('.action-resolve'); if (ab) ab.focus();
+        break;
+      case 'unclaim':
+        ui.actionBusy = true; render();
+        await unclaim(c);
+        ui.actionBusy = false; render();
+        var cb = $('.action-claim'); if (cb) cb.focus();
+        break;
       case 'note': ui.noteOpen = !ui.noteOpen; render(); if (ui.noteOpen) $('#note-input').focus(); break;
       case 'note-cancel': ui.noteOpen = false; render(); $('.action-note').focus(); break;
-      case 'resolve': await resolve(c); ui.noteOpen = false; render(); break;
+      case 'resolve':
+        ui.actionBusy = true; render();
+        await resolve(c);
+        ui.actionBusy = false; ui.noteOpen = false; render();
+        break;
     }
   });
 
   $('[data-detail]').addEventListener('submit', async function (e) {
     e.preventDefault();
+    if (ui.actionBusy) return;
     var c = find(ui.selected); var input = $('#note-input');
     var text = input.value.trim();
     if (!text) { input.focus(); return; }
-    await addNote(c, text); ui.noteOpen = false; render();
+    ui.actionBusy = true; render();
+    await addNote(c, text);
+    ui.actionBusy = false; ui.noteOpen = false; render();
     $('.action-note').focus();
   });
 

@@ -156,6 +156,12 @@ button { cursor: pointer; }
 .btn--text { padding: 0 var(--s-2); color: var(--c-text-2); }
 .btn--text:hover { color: var(--c-primary); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn[aria-busy="true"]::before {
+  content: ''; width: 14px; height: 14px; flex: none;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: btn-spin 0.6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 .case-actions__claimed { display: inline-flex; align-items: center; min-height: var(--tap); padding: 0 var(--s-3); font-size: var(--fs-sm); color: var(--c-accent); border: 1px dashed var(--c-line-strong); border-radius: var(--r-1); }
 .case-actions__claimed { gap: var(--s-3); padding-right: 0; }
 .case-actions__claimed strong { font-weight: var(--fw-medium); margin-left: 4px; }

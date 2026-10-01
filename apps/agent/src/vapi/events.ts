@@ -122,13 +122,13 @@ async function handleEndOfCallReport(req: Request, res: Response): Promise<void>
 
     void logAudit("call", `Call ended — ${summary}`);
 
-    // Best-effort: the conversation is already finalized above, so a Gmail
-    // hiccup here must not turn into a 500 for Vapi's webhook retry logic.
-    try {
-      await sendCallSummaryEmail(conversation.conversation_id, callId, status, summary);
-    } catch (emailError) {
+    // Best-effort and NOT awaited: the conversation is already finalized
+    // above, so neither a Gmail failure nor a slow/hanging SMTP connection
+    // should delay this response or risk Vapi's webhook retry logic timing
+    // out waiting on an email send.
+    sendCallSummaryEmail(conversation.conversation_id, callId, status, summary).catch((emailError) => {
       console.error("vapi/events: failed to send call summary email", emailError);
-    }
+    });
 
     res.status(200).json({ received: true });
 }

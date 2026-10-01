@@ -126,6 +126,12 @@ button { cursor: pointer; }
   transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
 .btn svg { width: 18px; height: 18px; flex: none; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn[aria-busy="true"]::before {
+  content: ''; width: 14px; height: 14px; flex: none;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+}
 .btn--primary { background: var(--c-primary); color: var(--c-surface); }
 .btn--primary:hover { background: var(--c-primary-hover); }
 .btn--secondary { background: var(--c-surface); border-color: var(--c-line); color: var(--c-primary); }
