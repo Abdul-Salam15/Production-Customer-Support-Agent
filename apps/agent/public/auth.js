@@ -82,9 +82,11 @@
   }
   // /login is universal — staff and customers both authenticate here, then
   // get routed by whoami() to /admin, /specialist or /customer.
+  var lastWhoamiError = null;
   async function whoami() {
+    lastWhoamiError = null;
     try { return await api('/api/whoami'); }
-    catch (e) { return null; }
+    catch (e) { lastWhoamiError = e.data && e.data.error; return null; }
   }
   async function fetchTeam() {
     var data = await api('/api/dashboard/team');
@@ -218,7 +220,15 @@
     var email = val('#login-email'), password = $('#login-password').value;
     var signInResult = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
     var who = signInResult.error ? null : await whoami();
+    var unconfirmed = (signInResult.error && /not confirmed/i.test(signInResult.error.message || '')) ||
+      (!signInResult.error && !who && lastWhoamiError === 'email_not_confirmed');
     if (!who) {
+      if (unconfirmed) {
+        try { await supabaseClient.auth.signOut(); } catch (e) { /* ignore */ }
+      }
+      loginErr.textContent = unconfirmed
+        ? 'Confirm your email first — open the link we sent when you signed up.'
+        : "That email or password isn't right.";
       loginErr.hidden = false;
       $('#login-password').value = '';
       $('#login-password').focus();

@@ -139,6 +139,27 @@
     'error-unsupported': "Voice calls don't work in this browser."
   };
 
+  // The caller's own local time and zone, e.g. "14:09 WAT" — never a fixed
+  // time or a zone the caller isn't in.
+  function clockTime(d) {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
+  }
+  function markCallStarted(d) {
+    $('[data-call-started]').textContent = d ? clockTime(d) : '';
+    $('[data-call-started-line]').hidden = !d;
+  }
+
+  // Only promises an email the backend will actually send: finalizeCall
+  // emails the typed form address, else a verified account's own email,
+  // else nobody.
+  var callEmail = null;
+  function nextStepsText() {
+    var tail = ' Keep your references handy if you contact us again.';
+    if (callEmail) return "We'll email a summary of this call to " + callEmail + '.' + tail;
+    if (state.outcomes.verified && ON_FILE_EMAIL) return "We'll email a summary of this call to the email on your account." + tail;
+    return tail.trim();
+  }
+
   function setState(name, opts) {
     if (STATES.indexOf(name) < 0) return;
     opts = opts || {};
@@ -149,6 +170,8 @@
     else { stopTimer(); stopWave(); globeState('idle'); globeVolume(0); }
     if (name === 'ended') {
       $('[data-summary-duration]').textContent = fmt(state.seconds);
+      $('[data-summary-ended]').textContent = clockTime(new Date());
+      $('[data-next-steps]').textContent = nextStepsText();
     }
     syncOutcomes();
     if (name !== 'live') closeTranscript(true);
@@ -490,8 +513,12 @@
     return day + ', ' + t + ' ' + abbr;
   }
 
-  function submitContactForm(data) {
+  // `arranged` is only true for the demo. On a real call the callback card
+  // appears when the escalation_created event arrives — i.e. once a case
+  // actually exists — not merely because the form was sent.
+  function submitContactForm(data, arranged) {
     setCallbackContact(data);
+    callEmail = data.email || null;
     cfForm.hidden = true; cfDone.hidden = false;
     cf.classList.add('contact-form--submitted');
     announce('Details received.');
@@ -499,8 +526,10 @@
     // Brief confirmation, then collapse into the outcome card
     collapseTimer = setTimeout(function () {
       hideContactForm();
-      setOutcome('callback', true);
-      announce('Specialist callback arranged. A RelayPay specialist will contact you.');
+      if (arranged) {
+        setOutcome('callback', true);
+        announce('Specialist callback arranged. A RelayPay specialist will contact you.');
+      }
       if (cfOnSubmitted) cfOnSubmitted(data);
     }, reduceMotion.matches ? 2400 : 1600);
   }
@@ -524,9 +553,13 @@
     };
     if (!activeCallId) {
       // Demo/review only — no real call to POST against.
-      submitContactForm(payload);
+      submitContactForm(payload, true);
       return;
     }
+    var cfError = $('[data-contact-form-error]', cf);
+    var sendBtn = $('button[type="submit"]', cfForm);
+    cfError.hidden = true;
+    sendBtn.disabled = true;
     // Always POSTed, even when keeping the on-file email: the submission is
     // what tells the model to create the escalation, and the server fills in
     // the real account email itself (the browser only ever has it masked).
@@ -538,10 +571,11 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     }).then(function (r) {
+      if (!r.ok) throw new Error('contact submission failed: ' + r.status);
       // The server queued a note for the model once the submission was
       // stored; this message makes it reply now (creating the escalation
       // and confirming) instead of waiting for the caller to speak again.
-      if (r.ok && activeVapi) {
+      if (activeVapi) {
         try {
           activeVapi.send({
             type: 'add-message',
@@ -550,12 +584,30 @@
           });
         } catch (err) { console.error('contact form: could not notify the agent', err); }
       }
-      submitContactForm(payload);
-    }).catch(function () { submitContactForm(payload); });
+      sendBtn.disabled = false;
+      submitContactForm(payload, false);
+    }).catch(function (err) {
+      // Nothing was stored, so the agent can't create the case: keep the
+      // form open rather than claim a callback was arranged.
+      console.error(err);
+      sendBtn.disabled = false;
+      cfError.hidden = false;
+    });
   });
 
   function sayInstead() {
     hideContactForm();
+    if (activeVapi) {
+      // Ask the real agent, so what the caller hears and the transcript match.
+      try {
+        activeVapi.send({
+          type: 'add-message',
+          message: { role: 'user', content: "I'd rather say my contact details out loud instead of using the form." },
+          triggerResponseEnabled: true
+        });
+      } catch (err) { console.error('say instead: could not notify the agent', err); }
+      return;
+    }
     var line = 'No problem. Please tell me your full name, your email, and a good time for the callback.';
     setLiveMode('speaking'); setCaption('agent', line); addTranscriptLine('agent', line);
     setTimeout(function () { if (state.panel === 'live') setLiveMode('listening'); }, 3500);
@@ -727,6 +779,7 @@
         } else if (card.kind === 'escalation_created') {
           setCardDetails('callback', { ref: d.escalation_id });
           setOutcome('callback', true);
+          announce('Specialist callback arranged. A RelayPay specialist will contact you.');
         }
         else if (card.kind === 'transaction_status' || card.kind === 'payout_status') {
           var sc = statusCardFromOutcome(card.kind, card.data || {});
@@ -747,8 +800,22 @@
     };
   }
 
+  // A caller signed in to a confirmed account is verified for this call
+  // without having to prove who they are by voice (home-account.js holds
+  // the session). Best-effort: on any failure they just verify by voice.
+  function linkSignedInCaller(callId) {
+    if (!window.RelayHome || !window.RelayHome.linkCall) return;
+    window.RelayHome.linkCall(callId).then(function (result) {
+      if (!result || !result.verified || callId !== activeCallId) return;
+      setCardDetails('verified', { company: result.company_name });
+      setOnFile(result.company_name, result.masked_email);
+      setOutcome('verified', true);
+    }).catch(function (err) { console.error('could not link the signed-in account to this call', err); });
+  }
+
   function bindVapiEvents(vapi) {
     vapi.on('call-start', function () {
+      markCallStarted(new Date());
       setState('live', { focus: true });
     });
     vapi.on('call-end', function () {
@@ -777,12 +844,27 @@
     ['verified', 'ticket', 'callback'].forEach(function (k) { setCardDetails(k, {}); });
     setOnFile('', '');
     setCallbackContact({});
+    callEmail = null;
+    markCallStarted(null);
+    $('[data-contact-form-error]', cf).hidden = true;
     realStatusCards = [];
     setStatusCards([]);
     setCaption('you', ''); setCaption('agent', '');
     hideContactForm();
     setState('requesting', { focus: true });
 
+    // Ask for the microphone ourselves first, so a denial shows the
+    // "microphone blocked" help instead of a generic connection error.
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      connectRealCall();
+    }, function (err) {
+      var blocked = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError' || err.name === 'NotFoundError');
+      setState(blocked ? 'blocked' : 'error-connection', { focus: true });
+    });
+  }
+
+  function connectRealCall() {
     Promise.all([loadVapiConfig(), loadVapiSdk()]).then(function (results) {
       var cfg = results[0], Vapi = results[1];
       activeVapi = new Vapi(cfg.vapiPublicKey);
@@ -795,7 +877,10 @@
       return activeVapi.start(cfg.vapiAssistantId);
     }).then(function (call) {
       activeCallId = call && call.id;
-      if (activeCallId) subscribeToCallEvents(activeCallId);
+      if (activeCallId) {
+        subscribeToCallEvents(activeCallId);
+        linkSignedInCaller(activeCallId);
+      }
     }).catch(function () {
       setState('error-connection', { focus: true });
     });

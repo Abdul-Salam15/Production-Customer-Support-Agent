@@ -3,6 +3,9 @@ import { Router as createRouter } from "express";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { logAudit } from "../auditLog.js";
+import { sendEmail } from "../mailer.js";
+import { queueCallNote } from "../session/agentSession.js";
+import { secondsIntoCall } from "../transcriptTiming.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -51,6 +54,13 @@ async function verifyCustomerSession(req: Request, res: Response, next: () => vo
       return;
     }
 
+    // Call history (and verified-caller status) is matched by email, so an
+    // account must prove it owns that email before it can see anything.
+    if (!userData.user.email_confirmed_at) {
+      res.status(403).json({ error: "email_not_confirmed" });
+      return;
+    }
+
     (req as CustomerRequest).customerUser = { id: account.id, email: account.email, fullName: account.full_name };
     next();
   } catch (error) {
@@ -85,6 +95,22 @@ async function findCustomerConversationIds(supabase: SupabaseClient, email: stri
   return Array.from(ids);
 }
 
+// A call's own final_status is fixed when it ends, but the case it opened
+// keeps moving — so a case a specialist has picked up or resolved wins.
+const STALE_CALL_MS = 2 * 60 * 60 * 1000;
+function callStatus(
+  conv: { started_at: string; ended_at: string | null; final_status: string | null },
+  linkedCase: { status: string } | null
+): string {
+  if (linkedCase?.status === "closed") return "case_resolved";
+  if (linkedCase?.status === "in_progress") return "case_in_progress";
+  if (conv.final_status) return conv.final_status;
+  // Calls from before end-of-call finalization worked never got an
+  // ended_at; one this old is over, not still in progress.
+  if (conv.ended_at || Date.now() - new Date(conv.started_at).getTime() > STALE_CALL_MS) return "abandoned";
+  return "in_progress";
+}
+
 async function shapeCall(supabase: SupabaseClient, conversationId: string): Promise<Record<string, unknown> | null> {
   const { data: conv } = await supabase
     .from("conversations")
@@ -94,11 +120,11 @@ async function shapeCall(supabase: SupabaseClient, conversationId: string): Prom
   if (!conv) return null;
 
   const [{ data: escalation }, { data: ticket }, { data: turns }] = await Promise.all([
-    supabase.from("escalations").select("escalation_id").eq("conversation_id", conversationId).maybeSingle(),
-    supabase.from("support_tickets").select("ticket_id").eq("conversation_id", conversationId).maybeSingle(),
+    supabase.from("escalations").select("escalation_id, status").eq("conversation_id", conversationId).limit(1).maybeSingle(),
+    supabase.from("support_tickets").select("ticket_id, status").eq("conversation_id", conversationId).limit(1).maybeSingle(),
     supabase
       .from("conversation_turns")
-      .select("role, transcript, turn_index")
+      .select("role, transcript, turn_index, created_at")
       .eq("conversation_id", conversationId)
       .order("turn_index", { ascending: true }),
   ]);
@@ -107,11 +133,12 @@ async function shapeCall(supabase: SupabaseClient, conversationId: string): Prom
     ? Math.max(0, Math.round((new Date(conv.ended_at).getTime() - new Date(conv.started_at).getTime()) / 1000))
     : null;
 
-  const SECONDS_PER_TURN = 8;
-  const transcript = ((turns ?? []) as { role: string; transcript: string; turn_index: number }[]).map((turn) => ({
+  const transcript = (
+    (turns ?? []) as { role: string; transcript: string; turn_index: number; created_at: string }[]
+  ).map((turn) => ({
     speaker: turn.role,
     text: turn.transcript,
-    at: turn.turn_index * SECONDS_PER_TURN,
+    at: secondsIntoCall(conv.started_at, turn.created_at),
   }));
 
   return {
@@ -119,10 +146,52 @@ async function shapeCall(supabase: SupabaseClient, conversationId: string): Prom
     at: conv.started_at,
     endedAt: conv.ended_at,
     duration,
-    status: conv.final_status ?? "in_progress",
+    status: callStatus(conv, escalation ?? ticket),
     summary: conv.summary,
     transcript,
   };
+}
+
+async function sendConfirmationEmail(email: string, fullName: string | null, link: string): Promise<void> {
+  await sendEmail({
+    to: email,
+    subject: "Confirm your RelayPay support account",
+    text: [
+      fullName ? `Hi ${fullName},` : `Hi,`,
+      ``,
+      `Confirm your email to finish creating your RelayPay support account:`,
+      link,
+      ``,
+      `If you didn't sign up, you can ignore this email.`,
+      ``,
+      `— RelayPay Support`,
+    ].join("\n"),
+  });
+}
+
+// An account that signed up but never clicked its link can ask again: a
+// magic link confirms the email the same way a signup link does. Only ever
+// sent to the address itself, so it reveals nothing to whoever asked.
+async function resendConfirmation(supabase: SupabaseClient, email: string, redirectTo: string): Promise<boolean> {
+  const { data: account } = await supabase
+    .from("customer_accounts")
+    .select("id, full_name")
+    .eq("email", email)
+    .maybeSingle();
+  if (!account) return false;
+
+  const { data: userData } = await supabase.auth.admin.getUserById(account.id);
+  if (!userData.user || userData.user.email_confirmed_at) return false;
+
+  const { data: link, error } = await supabase.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: { redirectTo },
+  });
+  if (error || !link.properties?.action_link) return false;
+
+  await sendConfirmationEmail(email, account.full_name, link.properties.action_link);
+  return true;
 }
 
 function registerCustomerAuthRoutes(router: Router): void {
@@ -142,22 +211,36 @@ function registerCustomerAuthRoutes(router: Router): void {
       }
 
       const supabase = getSupabaseClient();
-      const { data: created, error: createError } = await supabase.auth.admin.createUser({
-        email: email.trim(),
+      const cleanEmail = email.trim();
+      const cleanName = typeof fullName === "string" && fullName.trim().length > 0 ? fullName.trim() : null;
+      // Must be on Supabase's Redirect URLs allow-list (Authentication → URL
+      // Configuration), or the link falls back to the project's Site URL.
+      const redirectTo = `${req.protocol}://${req.get("host")}/customer`;
+
+      // Previously email_confirm: true — anyone could sign up with someone
+      // else's email and read that person's call transcripts. The account
+      // now stays unconfirmed until the link sent to that inbox is clicked.
+      const { data: link, error: linkError } = await supabase.auth.admin.generateLink({
+        type: "signup",
+        email: cleanEmail,
         password,
-        email_confirm: true,
+        options: { redirectTo },
       });
 
-      if (createError || !created.user) {
-        const alreadyExists = /already registered|already exists/i.test(createError?.message ?? "");
+      if (linkError || !link.user || !link.properties?.action_link) {
+        const alreadyExists = /already registered|already exists/i.test(linkError?.message ?? "");
+        if (alreadyExists && (await resendConfirmation(supabase, cleanEmail, redirectTo))) {
+          res.status(200).json({ created: true, confirmationSent: true });
+          return;
+        }
         res.status(400).json({ error: alreadyExists ? "email_in_use" : "signup_failed" });
         return;
       }
 
       const { error: accountError } = await supabase.from("customer_accounts").insert({
-        id: created.user.id,
-        email: email.trim(),
-        full_name: typeof fullName === "string" && fullName.trim().length > 0 ? fullName.trim() : null,
+        id: link.user.id,
+        email: cleanEmail,
+        full_name: cleanName,
       });
 
       if (accountError) {
@@ -165,9 +248,17 @@ function registerCustomerAuthRoutes(router: Router): void {
         return;
       }
 
-      void logAudit("account", `New customer account created (${email.trim()}).`);
+      try {
+        await sendConfirmationEmail(cleanEmail, cleanName, link.properties.action_link);
+      } catch {
+        // The account exists; signing up again with the same email resends.
+        res.status(502).json({ error: "confirmation_email_failed" });
+        return;
+      }
 
-      res.status(200).json({ created: true });
+      void logAudit("account", `New customer account created (${cleanEmail}), awaiting email confirmation.`);
+
+      res.status(200).json({ created: true, confirmationSent: true });
     } catch (error) {
       console.error("customer: signup failed", error);
       if (!res.headersSent) res.status(500).json({ error: "internal_error" });
@@ -197,6 +288,75 @@ function registerCustomerAuthRoutes(router: Router): void {
       res.status(200).json({ calls });
     } catch (error) {
       console.error("customer: failed to load calls", error);
+      if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Links a signed-in customer to the call they just started from the home
+  // page, so they're verified without proving who they are by voice. Only a
+  // confirmed account counts (verifyCustomerSession), and only when its email
+  // is the contact email of a real customer record.
+  router.post("/api/calls/:callId/identity", verifyCustomerSession, async (req: Request, res: Response) => {
+    try {
+      const { callId } = req.params;
+      const account = getCustomerUser(req);
+      const supabase = getSupabaseClient();
+
+      const escaped = account.email.replace(/[\\%_]/g, (c) => `\\${c}`);
+      const { data: customer } = await supabase
+        .from("customers")
+        .select("customer_id, company_name, contact_email")
+        .ilike("contact_email", escaped)
+        .limit(1)
+        .maybeSingle();
+
+      if (!customer) {
+        res.status(200).json({ verified: false });
+        return;
+      }
+
+      // Same upsert agentSession uses, so this works whether or not the
+      // call's session has started yet.
+      const { data: conversation, error } = await supabase
+        .from("conversations")
+        .upsert({ vapi_call_id: callId }, { onConflict: "vapi_call_id" })
+        .select("conversation_id, customer_id, ended_at")
+        .single();
+
+      if (error || !conversation || conversation.ended_at) {
+        res.status(200).json({ verified: false });
+        return;
+      }
+      // Never overwrite a different customer already verified on this call.
+      if (conversation.customer_id && conversation.customer_id !== customer.customer_id) {
+        res.status(200).json({ verified: false });
+        return;
+      }
+
+      if (!conversation.customer_id) {
+        await supabase
+          .from("conversations")
+          .update({ customer_id: customer.customer_id })
+          .eq("conversation_id", conversation.conversation_id);
+      }
+
+      queueCallNote(
+        callId,
+        `[System note — not spoken by the caller: the caller is signed in to the RelayPay website with a confirmed email, ` +
+          `so their identity is already confirmed as the account holder for ${customer.company_name} (customer ${customer.customer_id}). ` +
+          `Treat them as verified from the start of this call and skip voice verification.]`
+      );
+
+      void logAudit("account", `${account.fullName ?? account.email} started a call signed in as ${customer.company_name}.`);
+
+      const [local, domain] = customer.contact_email.split("@");
+      res.status(200).json({
+        verified: true,
+        company_name: customer.company_name,
+        masked_email: domain ? `${local.slice(0, 2)}***@${domain}` : customer.contact_email,
+      });
+    } catch (error) {
+      console.error("customer: failed to link account to call", error);
       if (!res.headersSent) res.status(500).json({ error: "internal_error" });
     }
   });
@@ -237,6 +397,10 @@ function registerCustomerAuthRoutes(router: Router): void {
         .select("id, email, full_name")
         .eq("id", userData.user.id)
         .maybeSingle();
+      if (account && !userData.user.email_confirmed_at) {
+        res.status(403).json({ error: "email_not_confirmed" });
+        return;
+      }
       if (account) {
         res.status(200).json({ kind: "customer", account: { id: account.id, email: account.email, fullName: account.full_name } });
         return;

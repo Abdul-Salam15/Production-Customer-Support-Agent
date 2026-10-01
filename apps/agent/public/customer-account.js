@@ -116,14 +116,18 @@
     signupErr.hidden = true;
     var name = val('#cs-name'), email = val('#cs-email'), password = $('#cs-password').value;
     try {
+      // No sign-in yet: the account only works once the emailed link proves
+      // this person owns the address (call history is matched by email).
       await api('/api/customer/signup', { method: 'POST', body: { fullName: name, email: email, password: password } });
-      var signInResult = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
-      if (signInResult.error) throw new Error('sign_in_after_signup_failed');
-      location.href = '/customer';
+      $('[data-confirm-email]').textContent = email;
+      show('check-email');
     } catch (e) {
-      signupErr.textContent = (e.data && e.data.error === 'email_in_use')
+      var code = e.data && e.data.error;
+      signupErr.textContent = code === 'email_in_use'
         ? 'An account with this email already exists. Log in instead.'
-        : 'Could not create your account — try again.';
+        : code === 'confirmation_email_failed'
+          ? "Your account was created but we couldn't send the confirmation email. Try signing up again in a moment to resend it."
+          : 'Could not create your account — try again.';
       signupErr.hidden = false;
     }
   });
@@ -146,10 +150,12 @@
   }
   var STATUS_BADGE = {
     resolved: { label: 'Resolved', cls: 'call-badge--resolved' },
-    ticket_created: { label: 'In progress', cls: 'call-badge--progress' },
+    ticket_created: { label: 'Ticket open', cls: 'call-badge--progress' },
     escalated: { label: 'Callback arranged', cls: 'call-badge--callback' },
+    case_in_progress: { label: 'With a specialist', cls: 'call-badge--callback' },
+    case_resolved: { label: 'Resolved', cls: 'call-badge--resolved' },
     abandoned: { label: 'Ended', cls: 'call-badge--progress' },
-    in_progress: { label: 'In progress', cls: 'call-badge--progress' }
+    in_progress: { label: 'Call in progress', cls: 'call-badge--progress' }
   };
   function transcriptItemHTML(t) {
     var time = '<span class="call-transcript__time tabular">' + fmtClock(t.at) + '</span>';

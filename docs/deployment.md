@@ -270,7 +270,9 @@ by hand, once:
 `agent-backend` URL's `/admin` path (e.g. `https://agent-backend-xxxx.onrender.com/admin`) to
 **Redirect URLs** — invite and password-reset emails link back here, and Supabase rejects
 redirects to URLs not on this list. (`/specialist` is the same page under a different, more
-memorable path for non-admin invites — either one works for this.)
+memorable path for non-admin invites — either one works for this.) Also add the `/customer`
+path (e.g. `https://agent-backend-xxxx.onrender.com/customer`): customer sign-up confirmation
+emails link back there, and an account can't see its call history until that link is clicked.
 
 ---
 

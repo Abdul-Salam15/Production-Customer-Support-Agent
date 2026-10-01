@@ -4,7 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { getVerifiedCustomerId } from "../lib/verification.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
-import { generateUniqueReference } from "./createSupportTicket.js";
+import { generateUniqueReference, referenceInUse } from "./createSupportTicket.js";
 import { sendEmail } from "../lib/mailer.js";
 import { logAudit } from "../lib/auditLog.js";
 
@@ -97,15 +97,6 @@ async function notifyEscalationCreated(args: {
   }
 }
 
-async function escalationIdExists(supabase: SupabaseClient, candidate: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("escalations")
-    .select("escalation_id")
-    .eq("escalation_id", candidate)
-    .maybeSingle();
-  return data !== null;
-}
-
 // A value the customer typed into the contact form (Phase 4.5) and the
 // server stored is authoritative; a value the model transcribed from speech
 // is not.
@@ -196,10 +187,8 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     getVerifiedCustomerId(supabase, conversationId),
   ]);
 
-  const escalationId =
-    ticketId && !(await escalationIdExists(supabase, ticketId))
-      ? ticketId
-      : await generateUniqueReference((candidate) => escalationIdExists(supabase, candidate));
+  // Always its own reference; a linked ticket stays linked via ticket_id.
+  const escalationId = await generateUniqueReference((candidate) => referenceInUse(supabase, candidate));
 
   const { error } = await supabase.from("escalations").insert({
     escalation_id: escalationId,

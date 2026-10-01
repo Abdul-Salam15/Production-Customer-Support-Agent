@@ -12,7 +12,24 @@ const AMOUNT_HOLD_BACK = 32;
 const HOLD_BACK_MARGIN = 8;
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-const AMOUNT_RE = /\$\s?\d[\d,]*(\.\d{1,2})?|\b\d[\d,]*(\.\d{1,2})?\s?(usd|eur|gbp|dollars?|pounds?|euros?)\b/gi;
+// Covers the corridors RelayPay serves (Africa, Europe, North America) by
+// symbol, ISO code before or after the number, and spoken name — not just
+// USD/EUR/GBP, which let "850,000 NGN" or "fifty thousand shillings" through.
+const CURRENCY_CODES =
+  "usd|eur|gbp|cad|ngn|kes|ghs|zar|ugx|tzs|rwf|etb|egp|xof|xaf|zmw|mwk|bwp|aud|chf|inr|cny|jpy";
+const CURRENCY_WORDS =
+  "dollars?|pounds?|euros?|naira|shillings?|cedis?|rand|francs?|birr|dirhams?|kwacha|pula|rupees?|yen|yuan|cfa";
+const NUMBER = String.raw`\d[\d,]*(?:\.\d{1,2})?`;
+const NUMBER_WORDS = String.raw`(?:\b(?:hundred|thousand|million|billion)\b)`;
+const AMOUNT_RE = new RegExp(
+  [
+    String.raw`[$€£₦₵]\s?${NUMBER}`,
+    String.raw`\b(?:${CURRENCY_CODES}|ksh)\s?${NUMBER}`,
+    String.raw`\b${NUMBER}\s?(?:${CURRENCY_CODES}|${CURRENCY_WORDS})\b`,
+    String.raw`${NUMBER_WORDS}\s+(?:${CURRENCY_CODES}|${CURRENCY_WORDS})\b`,
+  ].join("|"),
+  "gi"
+);
 
 const FALLBACK_LINE =
   "I'm not able to share that over the phone right now, but I can connect you with a specialist who can help.";

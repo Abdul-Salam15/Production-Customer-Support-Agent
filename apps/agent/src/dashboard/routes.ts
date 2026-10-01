@@ -2,6 +2,7 @@ import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../supabaseClient.js";
+import { secondsIntoCall } from "../transcriptTiming.js";
 import { sendEmail } from "../mailer.js";
 import { logAudit } from "../auditLog.js";
 
@@ -114,7 +115,7 @@ async function shapeCase(
 ): Promise<Record<string, unknown>> {
   const reference = caseType === "ticket" ? row.ticket_id : row.escalation_id;
 
-  const [{ data: customer }, { data: assignedProfile }, { data: notes }, { data: turns }, { data: submission }] =
+  const [{ data: customer }, { data: assignedProfile }, { data: notes }, { data: turns }, { data: submission }, { data: conversation }] =
     await Promise.all([
       row.customer_id
         ? supabase
@@ -135,16 +136,19 @@ async function shapeCase(
       row.conversation_id
         ? supabase
             .from("conversation_turns")
-            .select("role, transcript, turn_index")
+            .select("role, transcript, turn_index, created_at")
             .eq("conversation_id", row.conversation_id)
             .order("turn_index", { ascending: true })
         : Promise.resolve({ data: [] }),
       row.conversation_id
         ? supabase
             .from("contact_submissions")
-            .select("name, email, callback_time")
+            .select("name, email, callback_time, created_at")
             .eq("conversation_id", row.conversation_id)
             .maybeSingle()
+        : Promise.resolve({ data: null }),
+      row.conversation_id
+        ? supabase.from("conversations").select("started_at").eq("conversation_id", row.conversation_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
 
@@ -179,21 +183,20 @@ async function shapeCase(
     }
   }
 
-  // conversation_turns has no elapsed-seconds column, only turn_index — this
-  // spaces turns out at a fixed 8s/turn so queue.js's existing clock display
-  // (fmtClock) keeps working unchanged; it's a display estimate, not a real
-  // recording timestamp.
-  const SECONDS_PER_TURN = 8;
-  const turnRows = (turns ?? []) as { role: string; transcript: string; turn_index: number }[];
+  const callStartedAt = (conversation as { started_at?: string } | null)?.started_at;
+  const turnRows = (turns ?? []) as { role: string; transcript: string; turn_index: number; created_at: string }[];
   const transcript: Record<string, unknown>[] = turnRows.map((turn) => ({
     speaker: turn.role,
     text: turn.transcript,
-    at: turn.turn_index * SECONDS_PER_TURN,
+    at: secondsIntoCall(callStartedAt, turn.created_at),
   }));
   if (submission) {
-    transcript.push({
+    const formAt = secondsIntoCall(callStartedAt, submission.created_at);
+    // Placed where it happened in the call, not tacked on at the end.
+    const insertAt = transcript.findIndex((line) => (line.at as number) > formAt);
+    transcript.splice(insertAt < 0 ? transcript.length : insertAt, 0, {
       type: "form",
-      at: turnRows.length * SECONDS_PER_TURN + SECONDS_PER_TURN,
+      at: formAt,
       name: submission.name,
       email: submission.email,
       callbackTime: submission.callback_time,

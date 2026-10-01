@@ -36,14 +36,17 @@ async function handle(args: LookupTransactionArgs, ctx: ToolContext): Promise<Re
     return { found: false };
   }
 
+  // A bare reference from an unverified caller is reference-only: the model
+  // never receives the amount or whose transaction it is, so it can't read
+  // them out (the output guard is a backstop, not the only barrier).
+  const verified = verifiedCustomerId !== null;
+
   return {
     found: true,
     transaction_id: data.transaction_id,
-    customer_id: data.customer_id,
+    ...(verified ? { customer_id: data.customer_id, amount: data.amount, currency: data.currency } : {}),
     type: data.transaction_type,
     status: data.status,
-    amount: data.amount,
-    currency: data.currency,
     estimated_arrival: data.estimated_arrival,
     support_summary: data.support_summary,
     past_estimated_arrival: isPastEstimatedArrival(data.estimated_arrival),

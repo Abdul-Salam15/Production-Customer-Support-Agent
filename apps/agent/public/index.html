@@ -222,6 +222,7 @@
                   <input class="field__input" id="cf-notes" name="notes" type="text" maxlength="200">
                 </div>
 
+                <p class="field__error" role="alert" data-contact-form-error hidden>We couldn't send your details. Check your connection and try again, or select "I'll say it instead".</p>
                 <div class="contact-form__actions">
                   <button class="btn btn--primary" type="submit">Send details</button>
                   <button class="btn btn--text" type="button" data-action="say-instead">I'll say it instead</button>
@@ -280,13 +281,13 @@
             <p class="call-state__text">Thanks for calling RelayPay support.</p>
             <dl class="call-summary">
               <div><dt>Duration</dt><dd class="tabular" data-summary-duration>06:48</dd></div>
-              <div><dt>Ended</dt><dd class="tabular" data-summary-ended>14:09 WAT</dd></div>
+              <div><dt>Ended</dt><dd class="tabular" data-summary-ended></dd></div>
             </dl>
             <p class="call-refs-label" data-refs-label>References from this call</p>
             <div class="outcomes" data-outcomes-slot></div>
             <div class="next-steps">
               <p class="next-steps__label">What happens next</p>
-              <p class="next-steps__text">We've emailed a summary to the address on your account. Keep your references handy if you contact us again.</p>
+              <p class="next-steps__text" data-next-steps>Keep your references handy if you contact us again.</p>
             </div>
             <div class="call-state__actions">
               <button class="btn btn--primary" type="button" data-action="start-call">Start a new call</button>
@@ -328,7 +329,7 @@
 
           <!-- J4. Time limit -->
           <div class="call-state call-state--error call-state--time-limit" data-state="error-limit" hidden>
-            <p class="call-state__eyebrow">Call ended · <span class="tabular">20:00</span></p>
+            <p class="call-state__eyebrow">Call ended</p>
             <h2 class="call-state__title" tabindex="-1" data-state-heading>This call has reached its time limit.</h2>
             <p class="call-state__text">Your references are saved below. Start a new call if you need more help.</p>
             <p class="call-refs-label" data-refs-label>References from this call</p>
@@ -362,7 +363,7 @@
         <div class="try-asking__list">
           <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>What fees do you charge for international payments?<span class="try-asking__item-action">Say this</span></button>
           <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>How long do payouts take?<span class="try-asking__item-action">Say this</span></button>
-          <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>Can you check transaction <span class="tabular">TXN-9001</span>?<span class="try-asking__item-action">Say this</span></button>
+          <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>Can you check the status of my transaction?<span class="try-asking__item-action">Say this</span></button>
           <button class="try-asking__item" type="button" aria-pressed="false" data-suggestion>Why would my account be under review?<span class="try-asking__item-action">Say this</span></button>
         </div>
         <p class="try-asking__hint" aria-live="polite" data-suggestion-hint>Select a question to see how to phrase it. You can use your own words on the call.</p>
@@ -441,7 +442,7 @@
   <div class="transcript-drawer__head">
     <div>
       <h2 class="transcript-drawer__title" id="transcript-title">Transcript</h2>
-      <p class="transcript-drawer__meta">Call started <span class="tabular">14:02 WAT</span> · Recorded</p>
+      <p class="transcript-drawer__meta" data-call-started-line hidden>Call started <span class="tabular" data-call-started></span></p>
     </div>
     <button class="icon-btn" type="button" data-action="close-transcript" aria-label="Close transcript">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>

@@ -37,13 +37,15 @@ export async function generateUniqueReference(
   throw new Error("failed to generate a unique RP-#### reference after 10 attempts");
 }
 
-async function ticketIdExists(supabase: SupabaseClient, candidate: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("support_tickets")
-    .select("ticket_id")
-    .eq("ticket_id", candidate)
-    .maybeSingle();
-  return data !== null;
+// Tickets and escalations share one RP-#### space: the dashboard and the
+// caller both look a case up by reference alone, so the same number in both
+// tables made claim/resolve/notes act on whichever table was checked first.
+export async function referenceInUse(supabase: SupabaseClient, candidate: string): Promise<boolean> {
+  const [{ data: ticket }, { data: escalation }] = await Promise.all([
+    supabase.from("support_tickets").select("ticket_id").eq("ticket_id", candidate).maybeSingle(),
+    supabase.from("escalations").select("escalation_id").eq("escalation_id", candidate).maybeSingle(),
+  ]);
+  return ticket !== null || escalation !== null;
 }
 
 async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
@@ -66,7 +68,7 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
     }
   }
 
-  const ticketId = await generateUniqueReference((candidate) => ticketIdExists(supabase, candidate));
+  const ticketId = await generateUniqueReference((candidate) => referenceInUse(supabase, candidate));
 
   const { error } = await supabase.from("support_tickets").insert({
     ticket_id: ticketId,

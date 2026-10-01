@@ -275,6 +275,11 @@ async function createCallAgent(callId: string): Promise<CallAgent> {
   void logAudit("call", "A new call started.");
   const agent = new CallAgent(callId, conversationId);
   liveAgents.set(callId, agent);
+  const pending = pendingNotes.get(callId);
+  if (pending) {
+    pendingNotes.delete(callId);
+    pending.notes.forEach((note) => agent.addNote(note));
+  }
   return agent;
 }
 
@@ -299,13 +304,21 @@ export function warmCallAgent(callId: string): void {
   });
 }
 
-// Returns false when no session for this call is held in memory (e.g. the
-// process restarted mid-call), in which case the note can't be delivered.
-export function queueCallNote(callId: string, note: string): boolean {
+// Notes for a call whose session doesn't exist yet (e.g. the browser linked
+// a signed-in account before Vapi's first webhook or turn arrived). Handed
+// to the session when it's created; dropped after a while if it never is.
+const PENDING_NOTE_TTL_MS = 10 * 60 * 1000;
+const pendingNotes = new Map<string, { notes: string[]; at: number }>();
+
+export function queueCallNote(callId: string, note: string): void {
   const agent = liveAgents.get(callId);
-  if (!agent) return false;
-  agent.addNote(note);
-  return true;
+  if (agent) {
+    agent.addNote(note);
+    return;
+  }
+  const entry = pendingNotes.get(callId) ?? { notes: [], at: Date.now() };
+  entry.notes.push(note);
+  pendingNotes.set(callId, entry);
 }
 
 export function closeCallAgent(callId: string): void {
@@ -317,6 +330,9 @@ export function closeCallAgent(callId: string): void {
 
 const reaper = setInterval(() => {
   const now = Date.now();
+  for (const [callId, entry] of pendingNotes) {
+    if (now - entry.at > PENDING_NOTE_TTL_MS) pendingNotes.delete(callId);
+  }
   for (const agent of liveAgents.values()) {
     if (agent.isIdle && now - agent.lastActivity > IDLE_CLOSE_MS) {
       const callId = agent.callId;

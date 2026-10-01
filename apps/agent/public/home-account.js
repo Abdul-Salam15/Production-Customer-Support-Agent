@@ -29,12 +29,31 @@
     $('[data-account-in]').hidden = false;
   }
 
+  var ready = null;
+
+  // Called by app.js once a real call has an id: lets the server mark the
+  // call as verified for a signed-in customer. Resolves to null when there's
+  // no session (anonymous callers verify by voice as before).
+  async function linkCall(callId) {
+    await ready;
+    if (!supabaseClient) return null;
+    var sessionResult = await supabaseClient.auth.getSession();
+    var session = sessionResult.data && sessionResult.data.session;
+    if (!session) return null;
+    var res = await fetch('/api/calls/' + encodeURIComponent(callId) + '/identity', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + session.access_token }
+    });
+    return res.ok ? res.json() : null;
+  }
+  window.RelayHome = { linkCall: linkCall };
+
   $('[data-action="log-out"]').addEventListener('click', async function () {
     try { await supabaseClient.auth.signOut(); } catch (e) { /* ignore */ }
     location.reload();
   });
 
-  (async function init() {
+  ready = (async function init() {
     if (!window.supabase) return;
     try {
       var config = await (await fetch('/api/config')).json();

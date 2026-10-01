@@ -63,7 +63,9 @@ async function writeConversationTurns(
   customerText: string,
   agentText: string,
   answerType: string | null,
-  confidence: string | null
+  confidence: string | null,
+  customerAt: Date,
+  agentAt: Date
 ): Promise<void> {
   const supabase = getSupabaseClient();
   const customerIndex = agent.turnIndex++;
@@ -76,6 +78,9 @@ async function writeConversationTurns(
       turn_index: customerIndex,
       role: "customer",
       transcript: customerText,
+      // Real times, not insert time (both rows are written after the reply
+      // finishes) — the transcript clocks in call history are built from them.
+      created_at: customerAt.toISOString(),
     },
     {
       conversation_id: conversationId,
@@ -84,6 +89,7 @@ async function writeConversationTurns(
       transcript: agentText,
       answer_type: answerType,
       confidence,
+      created_at: agentAt.toISOString(),
     },
   ]);
 
@@ -286,6 +292,7 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const turnStartedAt = new Date();
   const callId = body.call?.id ?? `manual-test-${Date.now()}`;
   const userMessage = lastUserMessage(body.messages);
   if (!userMessage) {
@@ -332,8 +339,10 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   let streamedTag: ReturnType<typeof tagBuffer.getTag> = { answerType: null, confidence: null };
   let spokenSoFar = "";
   let needsSeparator = false;
+  let firstSpokenAt: Date | null = null;
   const speak = (text: string) => {
     if (!text) return;
+    firstSpokenAt ??= new Date();
     const out = needsSeparator && spokenSoFar && !/\s$/.test(spokenSoFar) && !/^\s/.test(text) ? ` ${text}` : text;
     needsSeparator = false;
     spokenSoFar += out;
@@ -432,7 +441,9 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
         userMessage.content,
         cleanedText,
         tag.answerType,
-        tag.confidence
+        tag.confidence,
+        turnStartedAt,
+        firstSpokenAt ?? new Date()
       );
     }
 }
