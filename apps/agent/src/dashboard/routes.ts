@@ -148,7 +148,11 @@ async function shapeCase(
             .maybeSingle()
         : Promise.resolve({ data: null }),
       row.conversation_id
-        ? supabase.from("conversations").select("started_at").eq("conversation_id", row.conversation_id).maybeSingle()
+        ? supabase
+            .from("conversations")
+            .select("started_at, signed_in_account_id")
+            .eq("conversation_id", row.conversation_id)
+            .maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
 
@@ -183,7 +187,20 @@ async function shapeCase(
     }
   }
 
-  const callStartedAt = (conversation as { started_at?: string } | null)?.started_at;
+  const conv = conversation as { started_at?: string; signed_in_account_id?: string | null } | null;
+  const callStartedAt = conv?.started_at;
+
+  // The website login the caller was signed in with, if any — shown when
+  // the case isn't linked to a business customer record.
+  let signedInAccount: { name: string | null; email: string } | null = null;
+  if (!customer && conv?.signed_in_account_id) {
+    const { data: account } = await supabase
+      .from("customer_accounts")
+      .select("full_name, email")
+      .eq("id", conv.signed_in_account_id)
+      .maybeSingle();
+    if (account) signedInAccount = { name: account.full_name, email: account.email };
+  }
   const turnRows = (turns ?? []) as { role: string; transcript: string; turn_index: number; created_at: string }[];
   const transcript: Record<string, unknown>[] = turnRows.map((turn) => ({
     speaker: turn.role,
@@ -212,6 +229,7 @@ async function shapeCase(
     priority: row.priority,
     category: row.category,
     companyName: customer?.company_name ?? null,
+    signedInAccount,
     contactName,
     contactEmail,
     summary: row.summary ?? row.reason,

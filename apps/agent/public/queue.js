@@ -67,7 +67,9 @@
     else if (c.status === 'closed') cls.push('case-row--closed');
     var who = c.companyName
       ? '<span class="case-row__company">' + esc(c.companyName) + ' · ' + esc(c.contactName) + '</span>'
-      : '<span class="case-row__company case-row__company--unverified">Unverified caller</span>';
+      : c.signedInAccount
+        ? '<span class="case-row__company case-row__company--unverified">Signed in · no business account</span>'
+        : '<span class="case-row__company case-row__company--unverified">Unverified caller</span>';
     var claim = c.status === 'closed'
       ? '<span class="case-row__claim" style="color:var(--c-success)">Resolved ' + relTime(c.resolvedAt) + '</span>'
       : c.claimedBy ? '<span class="case-row__claim">Claimed by ' + (c.claimedBy === CURRENT_USER ? 'you' : esc(c.claimedBy)) + '</span>' : '';
@@ -121,6 +123,10 @@
   }
   function accountHTML(c) {
     var a = c.linkedAccount || {};
+    if (!c.companyName && c.signedInAccount) {
+      return '<span class="info-grid__warn">No business account</span><span class="info-grid__sub">Signed in as ' +
+        esc(c.signedInAccount.email) + '</span>';
+    }
     if (!c.companyName) return '<span class="info-grid__warn">Not matched</span><span class="info-grid__sub">' + esc(a.accountStatus) + '</span>';
     var tone = a.accountStatus === 'Active' ? '' : 'info-grid__warn';
     return esc(c.companyName) + '<span class="info-grid__sub">' + esc(a.plan) + ' plan · <span class="' + tone + '">' + esc(a.accountStatus) + '</span></span>';

@@ -302,6 +302,29 @@ function registerCustomerAuthRoutes(router: Router): void {
       const account = getCustomerUser(req);
       const supabase = getSupabaseClient();
 
+      // Same upsert agentSession uses, so this works whether or not the
+      // call's session has started yet.
+      const { data: conversation, error } = await supabase
+        .from("conversations")
+        .upsert({ vapi_call_id: callId }, { onConflict: "vapi_call_id" })
+        .select("conversation_id, customer_id, signed_in_account_id, ended_at")
+        .single();
+
+      if (error || !conversation || conversation.ended_at) {
+        res.status(200).json({ verified: false });
+        return;
+      }
+
+      // Recorded even when the login matches no business customer, so the
+      // dashboard can say "Signed in · no business account" rather than
+      // lumping the caller in with anonymous ones. First login wins.
+      if (!conversation.signed_in_account_id) {
+        await supabase
+          .from("conversations")
+          .update({ signed_in_account_id: account.id })
+          .eq("conversation_id", conversation.conversation_id);
+      }
+
       const escaped = account.email.replace(/[\\%_]/g, (c) => `\\${c}`);
       const { data: customer } = await supabase
         .from("customers")
@@ -311,19 +334,6 @@ function registerCustomerAuthRoutes(router: Router): void {
         .maybeSingle();
 
       if (!customer) {
-        res.status(200).json({ verified: false });
-        return;
-      }
-
-      // Same upsert agentSession uses, so this works whether or not the
-      // call's session has started yet.
-      const { data: conversation, error } = await supabase
-        .from("conversations")
-        .upsert({ vapi_call_id: callId }, { onConflict: "vapi_call_id" })
-        .select("conversation_id, customer_id, ended_at")
-        .single();
-
-      if (error || !conversation || conversation.ended_at) {
         res.status(200).json({ verified: false });
         return;
       }
