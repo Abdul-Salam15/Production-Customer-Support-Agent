@@ -227,13 +227,22 @@
   flag is threaded through `actionsHTML()` instead, checked again on each render.
 - Once failed sends became visible in the Audit Logs tab (the fix above), the real cause of
   "still no email" showed up immediately: `connect ENETUNREACH 2607:f8b0:...` — an IPv6 address,
-  not a credentials error. `smtp.gmail.com` resolves to both an IPv4 and an IPv6 address; Node
-  18+ no longer resolves DNS IPv4-first by default, Render's containers have no outbound IPv6
-  route, and nodemailer doesn't itself retry on a different address family after a connection
-  attempt fails. Fixed with `dns.setDefaultResultOrder("ipv4first")` called once at the very top
-  of each app's entry point (before any other imports that might open a connection) — forces
-  every `dns.lookup` in the process to prefer IPv4, process-wide, rather than patching
-  nodemailer's transport options directly.
+  not a credentials error. First attempt: `dns.setDefaultResultOrder("ipv4first")` at each app's
+  entry point — did not fix it (confirmed by the user still hitting the identical error after
+  deploying). Read nodemailer's actual source (`node_modules/nodemailer/dist/cjs/shared/index.js`)
+  to find out why: it does its own DNS resolution via `dns.resolve4`/`dns.resolve6` directly,
+  completely bypassing `dns.lookup()` and therefore `setDefaultResultOrder` — and
+  `formatDNSValue` deliberately picks a **random** address from the combined IPv4+IPv6 result
+  list rather than preferring IPv4, so on a host with no outbound IPv6 route (Render's
+  containers) it fails roughly as often as Gmail's DNS answer includes an IPv6 record. Real fix:
+  resolve the IPv4 address ourselves (`dns/promises.resolve4`) and pass that literal IP as
+  nodemailer's `host` — `resolveHostname` short-circuits entirely when `host` is already an IP
+  (`net.isIP(options.host)`), so none of nodemailer's own resolution logic runs. `servername:
+  "smtp.gmail.com"` is required alongside it so TLS still validates against the real hostname
+  instead of the IP (confirmed in source: `this.servername` defaults to `false` when `host` is
+  an IP literal unless `options.servername` is set explicitly). Verified end-to-end from this
+  environment, not just by reasoning about the source: resolved a real IPv4 address, connected,
+  authenticated, and got Gmail's `250 2.0.0 OK` back with a real message-id, confirmed delivered.
 - Also fixed while investigating: the Tool Calls table was rendering oldest-first —
   `GET /api/dashboard/tool-calls` already orders newest-first server-side, but
   `renderToolCallTable()` was reversing that a second time (copy-pasted from the live feed's own

@@ -1,27 +1,6 @@
-import nodemailer, { type Transporter } from "nodemailer";
+import nodemailer from "nodemailer";
+import { resolve4 } from "node:dns/promises";
 import { logAudit } from "./auditLog.js";
-
-let transporter: Transporter | null = null;
-
-// Lazy, same pattern as getSupabaseClient() in this app: reads process.env
-// directly since mcp-server has no centralized env-validation module, and
-// fails at first use rather than at import time.
-function getTransporter(): Transporter {
-  if (transporter) return transporter;
-
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-
-  if (!user || !pass) {
-    throw new Error("GMAIL_USER and GMAIL_APP_PASSWORD must be set");
-  }
-
-  transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user, pass },
-  });
-  return transporter;
-}
 
 export interface SendEmailArgs {
   to: string;
@@ -36,13 +15,44 @@ function maskEmail(email: string): string {
   return domain ? `${local.slice(0, 2)}***@${domain}` : email;
 }
 
+// nodemailer does its own DNS resolution (resolve4 + resolve6, independent
+// of Node's dns.setDefaultResultOrder) and deliberately picks a RANDOM
+// address from the combined results — on a host with no outbound IPv6
+// route (Render's containers), that randomly produces ENETUNREACH. Passing
+// an already-resolved IPv4 literal as `host` makes nodemailer skip its own
+// resolution entirely (it only resolves hostnames, never IPs); `servername`
+// keeps TLS validating against the real hostname instead of the IP.
+async function buildTransporter() {
+  const user = process.env.GMAIL_USER;
+  const pass = process.env.GMAIL_APP_PASSWORD;
+
+  if (!user || !pass) {
+    throw new Error("GMAIL_USER and GMAIL_APP_PASSWORD must be set");
+  }
+
+  const addresses = await resolve4("smtp.gmail.com");
+  if (addresses.length === 0) {
+    throw new Error("no IPv4 address found for smtp.gmail.com");
+  }
+  const host = addresses[Math.floor(Math.random() * addresses.length)];
+
+  return nodemailer.createTransport({
+    host,
+    port: 465,
+    secure: true,
+    servername: "smtp.gmail.com",
+    auth: { user, pass },
+  });
+}
+
 // Email is a best-effort side effect, never the source of truth — callers
 // must not let a send failure block the operation that triggered it (the
 // escalation/ticket row is already committed by the time this runs).
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
   const user = process.env.GMAIL_USER;
   try {
-    await getTransporter().sendMail({
+    const transporter = await buildTransporter();
+    await transporter.sendMail({
       from: user,
       to: args.to,
       subject: args.subject,

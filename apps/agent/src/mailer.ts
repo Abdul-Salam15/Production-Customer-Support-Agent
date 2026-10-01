@@ -1,18 +1,7 @@
-import nodemailer, { type Transporter } from "nodemailer";
+import nodemailer from "nodemailer";
+import { resolve4 } from "node:dns/promises";
 import { getEnv } from "./env.js";
 import { logAudit } from "./auditLog.js";
-
-let transporter: Transporter | null = null;
-
-function getTransporter(): Transporter {
-  if (transporter) return transporter;
-  const env = getEnv();
-  transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: env.GMAIL_USER, pass: env.GMAIL_APP_PASSWORD },
-  });
-  return transporter;
-}
 
 export interface SendEmailArgs {
   to: string;
@@ -25,12 +14,38 @@ function maskEmail(email: string): string {
   return domain ? `${local.slice(0, 2)}***@${domain}` : email;
 }
 
+// nodemailer does its own DNS resolution (resolve4 + resolve6, independent
+// of Node's dns.setDefaultResultOrder) and deliberately picks a RANDOM
+// address from the combined results — on a host with no outbound IPv6
+// route (Render's containers), that randomly produces ENETUNREACH. Passing
+// an already-resolved IPv4 literal as `host` makes nodemailer skip its own
+// resolution entirely (it only resolves hostnames, never IPs); `servername`
+// keeps TLS validating against the real hostname instead of the IP.
+async function buildTransporter() {
+  const env = getEnv();
+
+  const addresses = await resolve4("smtp.gmail.com");
+  if (addresses.length === 0) {
+    throw new Error("no IPv4 address found for smtp.gmail.com");
+  }
+  const host = addresses[Math.floor(Math.random() * addresses.length)];
+
+  return nodemailer.createTransport({
+    host,
+    port: 465,
+    secure: true,
+    servername: "smtp.gmail.com",
+    auth: { user: env.GMAIL_USER, pass: env.GMAIL_APP_PASSWORD },
+  });
+}
+
 // Email is a best-effort side effect, never the source of truth — callers
 // must not let a send failure block whatever operation triggered it.
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
   const env = getEnv();
   try {
-    await getTransporter().sendMail({
+    const transporter = await buildTransporter();
+    await transporter.sendMail({
       from: env.GMAIL_USER,
       to: args.to,
       subject: args.subject,
