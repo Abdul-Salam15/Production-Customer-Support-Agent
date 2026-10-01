@@ -665,10 +665,10 @@ function registerTeamRoutes(router: Router): void {
         return;
       }
 
-      // Not awaited: a slow/hanging Gmail connection must not delay this
-      // response — this is exactly what made the Confirm change button
-      // look broken (it was just waiting on an email send with zero
-      // feedback) when GMAIL_USER/GMAIL_APP_PASSWORD are still placeholders.
+      // Not awaited: a slow email send must not delay this response — this
+      // is exactly what made the Confirm change button look broken (it was
+      // just waiting on an email send with zero feedback) before this and
+      // the fire-and-forget pattern below were in place.
       const changedAt = new Date().toLocaleString("en-GB", {
         day: "numeric",
         month: "short",

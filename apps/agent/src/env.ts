@@ -29,9 +29,11 @@ export interface Env {
   // client-side by design (RLS governs what it can reach), unlike
   // SUPABASE_SERVICE_ROLE_KEY above, which never leaves the server.
   SUPABASE_ANON_KEY: string;
-  // Gmail SMTP, for the escalation/call-summary/role-change/resolved emails.
-  GMAIL_USER: string;
-  GMAIL_APP_PASSWORD: string;
+  // Brevo's HTTP API, for the escalation/call-summary/role-change/resolved
+  // emails — not SMTP: Render blocks outbound SMTP (confirmed — both port
+  // 465 and 587 hang until timeout), but plain HTTPS is never blocked.
+  BREVO_API_KEY: string;
+  EMAIL_FROM: string;
   SUPPORT_TEAM_EMAIL: string;
 }
 
@@ -47,8 +49,8 @@ const REQUIRED_KEYS = [
   "VAPI_PUBLIC_KEY",
   "VAPI_ASSISTANT_ID",
   "SUPABASE_ANON_KEY",
-  "GMAIL_USER",
-  "GMAIL_APP_PASSWORD",
+  "BREVO_API_KEY",
+  "EMAIL_FROM",
   "SUPPORT_TEAM_EMAIL",
 ] as const;
 
@@ -74,8 +76,8 @@ export function getEnv(): Env {
     VAPI_PUBLIC_KEY: process.env.VAPI_PUBLIC_KEY!,
     VAPI_ASSISTANT_ID: process.env.VAPI_ASSISTANT_ID!,
     SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
-    GMAIL_USER: process.env.GMAIL_USER!,
-    GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD!,
+    BREVO_API_KEY: process.env.BREVO_API_KEY!,
+    EMAIL_FROM: process.env.EMAIL_FROM!,
     SUPPORT_TEAM_EMAIL: process.env.SUPPORT_TEAM_EMAIL!,
     // Render sets this; read it, don't hardcode.
     PORT: Number(process.env.PORT ?? 3000),

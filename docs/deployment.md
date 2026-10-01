@@ -201,17 +201,21 @@ you need it for the next service.
 | `SUPABASE_URL` | your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | your Supabase service role key |
 | `MCP_SERVER_TOKEN` | make up a long random token — the agent backend must use this exact same value |
-| `GMAIL_USER` | the Gmail address emails are sent from (see the App Password note below) |
-| `GMAIL_APP_PASSWORD` | a Gmail **App Password** for that account, not its normal login password |
-| `SUPPORT_TEAM_EMAIL` | where escalation/call-summary alerts go — can be the same as `GMAIL_USER` |
+| `BREVO_API_KEY` | your Brevo API key (see the setup note below) |
+| `EMAIL_FROM` | the address emails are sent from — must be a verified sender in Brevo |
+| `SUPPORT_TEAM_EMAIL` | where escalation/call-summary alerts go — can be the same as `EMAIL_FROM` |
 
 Do not set `PORT` — Render sets it automatically and the code already reads it from the
 environment.
 
-**Gmail App Password setup** (needed once, for whichever Gmail account sends these emails):
-1. Turn on 2-Step Verification for that Google account, if it isn't already (myaccount.google.com/security).
-2. Go to myaccount.google.com/apppasswords, create an app password (any name, e.g. "RelayPay support"), and copy the 16-character code it generates.
-3. Use that code as `GMAIL_APP_PASSWORD` — not the account's normal password. Gmail SMTP tops out around 500 sends/day on a regular account (2000/day on Workspace), which is fine for support-volume email but not for anything higher-volume.
+**Brevo setup** (needed once): emails go through Brevo's HTTP API, not SMTP — Render blocks
+outbound SMTP entirely (confirmed: both port 465 and 587 just hang until timeout from a deployed
+Render service, while both work fine from an unrestricted network), but plain HTTPS is never
+blocked.
+1. Sign up at brevo.com (free tier: 300 emails/day).
+2. **Settings → Senders & IP → Senders** — add and verify the email address you want to send
+   from (Brevo emails you a confirmation link). Use that exact address as `EMAIL_FROM`.
+3. **Settings → SMTP & API → API Keys** — create a new API key and use it as `BREVO_API_KEY`.
 
 ### F2. Deploy `agent-backend`
 
@@ -233,8 +237,8 @@ Same flow as F1, with:
 | `VAPI_PUBLIC_KEY` | your Vapi public key |
 | `VAPI_ASSISTANT_ID` | your **real** assistant's ID (Part G) |
 | `SUPABASE_ANON_KEY` | your Supabase project's anon/public key — safe client-side, powers the specialist dashboard's login |
-| `GMAIL_USER` | same Gmail address as `mcp-server`'s |
-| `GMAIL_APP_PASSWORD` | same Gmail App Password as `mcp-server`'s (see F1's setup note) |
+| `BREVO_API_KEY` | same Brevo API key as `mcp-server`'s |
+| `EMAIL_FROM` | same verified sender address as `mcp-server`'s (see F1's Brevo setup note) |
 | `SUPPORT_TEAM_EMAIL` | same internal recipient as `mcp-server`'s |
 
 **You should see** the same build-log-then-live pattern, ending in a URL like

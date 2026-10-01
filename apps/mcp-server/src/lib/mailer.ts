@@ -1,5 +1,3 @@
-import nodemailer from "nodemailer";
-import { resolve4 } from "node:dns/promises";
 import { logAudit } from "./auditLog.js";
 
 export interface SendEmailArgs {
@@ -15,50 +13,38 @@ function maskEmail(email: string): string {
   return domain ? `${local.slice(0, 2)}***@${domain}` : email;
 }
 
-// nodemailer does its own DNS resolution (resolve4 + resolve6, independent
-// of Node's dns.setDefaultResultOrder) and deliberately picks a RANDOM
-// address from the combined results — on a host with no outbound IPv6
-// route (Render's containers), that randomly produces ENETUNREACH. Passing
-// an already-resolved IPv4 literal as `host` makes nodemailer skip its own
-// resolution entirely (it only resolves hostnames, never IPs); `servername`
-// keeps TLS validating against the real hostname instead of the IP.
-async function buildTransporter() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-
-  if (!user || !pass) {
-    throw new Error("GMAIL_USER and GMAIL_APP_PASSWORD must be set");
-  }
-
-  const addresses = await resolve4("smtp.gmail.com");
-  if (addresses.length === 0) {
-    throw new Error("no IPv4 address found for smtp.gmail.com");
-  }
-  const host = addresses[Math.floor(Math.random() * addresses.length)];
-
-  return nodemailer.createTransport({
-    host,
-    port: 587,
-    secure: false,
-    requireTLS: true,
-    servername: "smtp.gmail.com",
-    auth: { user, pass },
-  });
-}
-
-// Email is a best-effort side effect, never the source of truth — callers
-// must not let a send failure block the operation that triggered it (the
-// escalation/ticket row is already committed by the time this runs).
+// Brevo's HTTP API (https://api.brevo.com), not SMTP — confirmed Render
+// blocks outbound SMTP entirely (both port 465 direct-TLS and 587 STARTTLS
+// hang until timeout from there, while both worked fine from an
+// unrestricted network), but plain HTTPS on 443 is never blocked.
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
-  const user = process.env.GMAIL_USER;
+  const apiKey = process.env.BREVO_API_KEY;
+  const fromEmail = process.env.EMAIL_FROM;
+
+  if (!apiKey || !fromEmail) {
+    throw new Error("BREVO_API_KEY and EMAIL_FROM must be set");
+  }
+
   try {
-    const transporter = await buildTransporter();
-    await transporter.sendMail({
-      from: user,
-      to: args.to,
-      subject: args.subject,
-      text: args.text,
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "api-key": apiKey,
+      },
+      body: JSON.stringify({
+        sender: { email: fromEmail },
+        to: [{ email: args.to }],
+        subject: args.subject,
+        textContent: args.text,
+      }),
     });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Brevo API returned ${res.status}: ${body.slice(0, 300)}`);
+    }
   } catch (error) {
     // Logged to audit_log, not just the server console — a failed send is
     // otherwise invisible to anyone without direct hosting-platform log

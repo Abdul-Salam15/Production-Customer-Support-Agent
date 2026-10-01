@@ -262,3 +262,13 @@
   strong evidence Render blocks outbound SMTP broadly, and the real fix is switching to an
   HTTP-based email API (Resend was the original plan in `implementation.md` before Gmail SMTP
   was chosen) rather than continuing to try SMTP ports.
+- Port 587 also failed on Render (still "Connection timeout" per the user's report) — confirming
+  Render blocks outbound SMTP broadly, not just port 465. Switched to Brevo's HTTP API
+  (`https://api.brevo.com/v3/smtp/email`, plain `fetch`, no new dependency) at the user's
+  request, replacing `nodemailer` entirely in both apps' `mailer.ts` and removing it from both
+  `package.json`s. Env vars changed shape: `GMAIL_USER`/`GMAIL_APP_PASSWORD` are gone, replaced
+  by `BREVO_API_KEY` and `EMAIL_FROM` (the sender address, which must be a verified sender in
+  Brevo — Settings → Senders & IP → Senders, confirmed via an emailed link — not an app password
+  like Gmail needed). Unlike the port-465 fix, this one could not be verified end-to-end from
+  this environment — no real Brevo account/API key was available here — so it's unverified until
+  the user tests it against their own Render deployment with a real key.

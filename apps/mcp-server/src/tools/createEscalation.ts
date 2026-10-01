@@ -41,8 +41,8 @@ type CreateEscalationArgs = {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Best-effort notification, never the source of truth: the escalation row
-// above is already committed by the time this runs, so a Gmail outage or a
-// bad GMAIL_APP_PASSWORD must not surface as a tool failure to the caller.
+// above is already committed by the time this runs, so an email provider
+// outage or bad credentials must not surface as a tool failure to the caller.
 async function notifyEscalationCreated(args: {
   escalationId: string;
   priority: string;

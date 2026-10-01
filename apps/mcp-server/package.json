@@ -13,12 +13,10 @@
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
-    "nodemailer": "^10.0.13",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
-    "@types/nodemailer": "^8.0.2",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3"
   }
