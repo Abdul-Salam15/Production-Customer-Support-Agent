@@ -141,7 +141,16 @@
 
   // The caller's own local time and zone, e.g. "14:09 WAT" — never a fixed
   // time or a zone the caller isn't in.
+  // Uses the same zone labels as the callback form (WAT, EAT, ...) where the
+  // caller's zone is one of them — browsers render Lagos as "GMT+1", which
+  // didn't match the "WAT" on the callback card beside it.
   function clockTime(d) {
+    var zone = '';
+    try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { /* ignore */ }
+    var opt = zone && document.querySelector('#cf-tz option[value="' + zone + '"]');
+    if (opt && opt.dataset.abbr) {
+      return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + ' ' + opt.dataset.abbr;
+    }
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
   }
   function markCallStarted(d) {

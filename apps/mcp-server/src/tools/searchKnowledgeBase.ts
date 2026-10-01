@@ -67,7 +67,9 @@ async function handle(args: SearchKnowledgeBaseArgs, ctx: ToolContext): Promise<
       if (logError) console.error("search_knowledge_base: failed to write retrieval_logs row", logError.message);
     });
 
-  return { sufficient_context: sufficientContext, chunks };
+  // top_score is first so it survives the 500-char tool_calls summary —
+  // it's what to look at when tuning SUFFICIENT_CONTEXT_THRESHOLD.
+  return { top_score: Number(topScore.toFixed(3)), sufficient_context: sufficientContext, chunks };
 }
 
 export function registerSearchKnowledgeBase(server: McpServer): void {
