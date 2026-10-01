@@ -249,3 +249,16 @@
   reverse, where it's correct because that endpoint returns oldest-first). And the table had no
   scroll boundary of its own, so on a narrower viewport the Status/Time columns were pushed
   completely out of reach rather than reachable via a contained horizontal scrollbar.
+- The IPv4-literal fix changed the error on Render from `ENETUNREACH` to `Connection timeout` —
+  same IPv4 address, same port 465, just hangs instead of failing fast. Port 465 worked fine
+  from this dev environment (the verified send above), which points at Render specifically
+  blocking or dropping outbound port 465 — a known category of restriction on cloud platforms to
+  curb spam. Switched to port 587 with STARTTLS (`secure: false, requireTLS: true`) instead of
+  465's direct TLS, at the user's request, as a cheaper thing to rule out before committing to
+  replacing Gmail SMTP with an HTTP-based provider. Could not verify this one end-to-end the way
+  465 was verified — port 587 also timed out from this dev environment, which may just be this
+  environment's own restriction on that port rather than telling us anything about Render, so
+  this one needs a real test from Render itself. If 587 also times out there, that's reasonably
+  strong evidence Render blocks outbound SMTP broadly, and the real fix is switching to an
+  HTTP-based email API (Resend was the original plan in `implementation.md` before Gmail SMTP
+  was chosen) rather than continuing to try SMTP ports.
