@@ -14,6 +14,10 @@ import { createCustomerRouter } from "./customer/routes.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
+// Render sits behind a reverse proxy — without this, req.protocol always
+// reports "http" even over a real https:// connection, which would send
+// invite emails an http:// redirectTo link.
+app.set("trust proxy", true);
 app.use(express.json());
 app.use(createVapiRouter());
 app.use(createVapiEventsRouter());

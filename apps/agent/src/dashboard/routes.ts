@@ -569,7 +569,14 @@ function registerTeamRoutes(router: Router): void {
       }
 
       const supabase = getSupabaseClient();
-      const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email.trim());
+      // Without an explicit redirectTo, Supabase sends the invite link to
+      // the project's default Site URL — which is the customer home page,
+      // not the dashboard login that actually handles #type=invite. Must
+      // match a URL on Supabase's Redirect URLs allow-list exactly.
+      const redirectTo = `${req.protocol}://${req.get("host")}/admin`;
+      const { data: invited, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email.trim(), {
+        redirectTo,
+      });
       if (inviteError || !invited.user) {
         res.status(500).json({ error: "failed_to_invite" });
         return;
