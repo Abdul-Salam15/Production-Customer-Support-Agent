@@ -25,10 +25,18 @@ interface VapiEndOfCallReport {
 // Bearer <token>. Checking only the first rejected every webhook from a
 // credential-based setup — end-of-call-report included, which is why calls
 // never got ended_at and the summary email never went out.
-function hasValidSecret(req: Request, expected: string): boolean {
-  if (req.headers["x-vapi-secret"] === expected) return true;
+// Trimmed on both sides: a secret pasted into Render or Vapi's dashboard
+// easily picks up a trailing space or newline, and the exact-match check
+// then rejected every webhook with no visible difference between values.
+function hasValidSecret(req: Request, rawExpected: string): boolean {
+  const expected = rawExpected.trim();
+  if (!expected) return false;
+  const secret = req.headers["x-vapi-secret"];
+  if (typeof secret === "string" && secret.trim() === expected) return true;
   const auth = req.headers["authorization"];
-  return typeof auth === "string" && (auth === `Bearer ${expected}` || auth === expected);
+  if (typeof auth !== "string") return false;
+  const token = auth.trim().replace(/^Bearer\s+/i, "");
+  return token === expected;
 }
 
 // A rejected webhook is otherwise invisible without Render log access, but
