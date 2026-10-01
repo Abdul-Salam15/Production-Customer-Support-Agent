@@ -1,170 +1,16 @@
-/* RelayPay Support Queue — prototype controller (vanilla JS).
-   Replace CASES with API data; keep the same object shape. */
+/* RelayPay Support Queue — real data via GET/PATCH/POST /api/dashboard/cases/*
+   (apps/agent/src/dashboard/routes.ts). Loaded via window.RelayAuth.api, which
+   attaches the signed-in specialist's Supabase session as a bearer token. */
 (function () {
   'use strict';
 
-  var NOW = Date.now();
-  var H = 3600 * 1000;
-  var ago = function (h) { return new Date(NOW - h * H).toISOString(); };
-  var CURRENT_USER = 'Tunde Adeyemi';
-  // "Mon 28 Sep, 10:00" style, for sample callback times relative to now
-  var slot = function (h, hh, mm) {
-    var d = new Date(NOW - h * H); d.setHours(hh, mm, 0, 0);
-    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()] + ' ' + d.getDate() + ' ' +
-      ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ', ' + (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
-  };
-
-  /* ---------- Sample data ---------- */
-  var CASES = [
-    {
-      reference: 'RP-4821', priority: 'high', category: 'compliance',
-      companyName: 'AccraStack', contactName: 'Efua Mensah',
-      summary: 'Payout to Kente Labs under compliance review, customer asking why.',
-      createdAt: ago(3.1), status: 'open',
-      contactEmail: 'efua@accrastack.example',
-      callbackTime: 'Mon 28 Sep, 10:00', callbackTimezone: 'GMT · Accra',
-      linkedAccount: { plan: 'Growth', accountStatus: 'Active' },
-      linkedTransactionOrPayout: { type: 'Payout', reference: 'PO-7734', status: 'Under compliance review', tone: 'warn' },
-      transcript: [
-        { speaker: 'agent', at: 2, text: 'Hello, this is RelayPay support. I’m an AI agent and this call is recorded. How can I help?' },
-        { speaker: 'customer', at: 9, text: 'Hi. Our payout to Kente Labs has been on hold since Friday.' },
-        { speaker: 'agent', at: 14, text: 'I can look into that. First I need to confirm the account. What is the registered business name?' },
-        { speaker: 'customer', at: 20, text: 'AccraStack.' },
-        { speaker: 'agent', at: 27, text: 'Thank you, the account is verified. Do you have the payout reference?' },
-        { speaker: 'customer', at: 32, text: 'Yes, PO-7734.' },
-        { speaker: 'agent', at: 41, text: 'PO-7734 is under a compliance review. That review is handled by our specialists.' },
-        { speaker: 'customer', at: 48, text: 'Why is it under review, and when will it be released? Kente Labs is waiting on this.' },
-        { speaker: 'agent', at: 56, text: 'I can’t give a reason or a release date on this call. I’ve created ticket RP-4821, and a specialist can call you back. When suits you?' },
-        { speaker: 'customer', at: 65, text: 'Monday at ten, Accra time. Use my email on file.' },
-        { speaker: 'agent', at: 71, text: 'Done. A specialist will call you on Monday 28 September at 10:00 GMT. Your reference is RP-4821.' }
-      ],
-      claimedBy: null, notes: []
-    },
-    {
-      reference: 'RP-4819', priority: 'high', category: 'account',
-      companyName: null, contactName: 'Kwame Boateng (unconfirmed)',
-      summary: 'Caller says account was restricted, could not be matched to a customer record.',
-      createdAt: ago(1.2), status: 'open',
-      contactEmail: 'kwame@boatengfreight.example',
-      callbackTime: 'Mon 28 Sep, 15:30', callbackTimezone: 'WAT · Lagos',
-      linkedAccount: { plan: null, accountStatus: 'No matching record' },
-      linkedTransactionOrPayout: null,
-      transcript: [
-        { speaker: 'agent', at: 2, text: 'Hello, this is RelayPay support. I’m an AI agent and this call is recorded. How can I help?' },
-        { speaker: 'customer', at: 8, text: 'Our account was restricted this morning and we can’t send any payments.' },
-        { speaker: 'agent', at: 13, text: 'I’m sorry to hear that. To check the account, what is the registered business name?' },
-        { speaker: 'customer', at: 19, text: 'Boateng Freight.' },
-        { speaker: 'agent', at: 28, text: 'I couldn’t find a RelayPay account under that name. Could it be registered under a different name?' },
-        { speaker: 'customer', at: 35, text: 'No, that’s the name. We’ve used RelayPay for over a year.' },
-        { speaker: 'agent', at: 42, text: 'I can’t share account details without a match. Account restrictions are reviewed by a specialist. Can I take your details for a callback?' },
-        { speaker: 'customer', at: 50, text: 'Yes. I’ll type them in.' },
-        { type: 'form', at: 94, name: 'Kwame Boateng', email: 'kwame@boatengfreight.example', callbackTime: 'Mon 28 Sep, 15:30', callbackTimezone: 'WAT · Lagos', notes: 'Account may be under Boateng Freight Services Ltd.' },
-        { speaker: 'agent', at: 98, text: 'Thank you, I’ve received your details. A specialist will call you on Monday at 15:30 WAT to verify the account and review the restriction.' },
-        { speaker: 'customer', at: 107, text: 'Okay. Thanks.' }
-      ],
-      claimedBy: null, notes: []
-    },
-    {
-      reference: 'RP-4818', priority: 'medium', category: 'payment',
-      companyName: 'CapeCloud', contactName: 'Amina Jacobs',
-      summary: 'Payout to Mwiza Design failed, beneficiary details need review.',
-      createdAt: ago(5.3), status: 'in_progress',
-      contactEmail: 'amina@capecloud.example',
-      callbackTime: 'Mon 28 Sep, 09:00', callbackTimezone: 'SAST · Johannesburg',
-      linkedAccount: { plan: 'Scale', accountStatus: 'Active' },
-      linkedTransactionOrPayout: { type: 'Payout', reference: 'PO-7701', status: 'Failed', tone: 'bad' },
-      transcriptExcerpt: {
-        customerLine: 'The payout to Mwiza Design failed twice. We need it to go through today.',
-        agentLine: 'The payout failed because the beneficiary bank details didn’t validate. I can’t change beneficiary details on a call, so I’ve passed this to a specialist.'
-      },
-      claimedBy: 'Zainab Bello',
-      notes: [{ author: 'Zainab Bello', at: ago(4.6), text: 'Asked customer to confirm Mwiza Design’s account number by email.' }]
-    },
-    {
-      reference: 'RP-4815', priority: 'medium', category: 'payment',
-      companyName: 'KigaliWorks', contactName: 'Patrick Ndayisaba',
-      summary: 'Invoice payment failed, customer wants someone to look into it.',
-      createdAt: ago(8.4), status: 'open',
-      contactEmail: 'patrick@kigaliworks.example',
-      callbackTime: 'Mon 28 Sep, 11:00', callbackTimezone: 'CAT · Kigali',
-      linkedAccount: { plan: 'Starter', accountStatus: 'Active' },
-      linkedTransactionOrPayout: { type: 'Transaction', reference: 'TXN-9140', status: 'Failed', tone: 'bad' },
-      transcriptExcerpt: {
-        customerLine: 'Our client tried to pay invoice INV-2207 and it failed. Can someone look into it?',
-        agentLine: 'I can see TXN-9140 was declined by the payer’s bank. I’ve created a ticket so a specialist can check it with the payment provider.'
-      },
-      claimedBy: null, notes: []
-    },
-    {
-      reference: 'RP-4810', priority: 'low', category: 'other',
-      companyName: 'NairobiOps', contactName: 'Daniel Mwangi',
-      summary: 'General question about verification timeline, referred for follow-up.',
-      createdAt: ago(26), status: 'open',
-      contactEmail: 'daniel@nairobiops.example',
-      callbackTime: 'Tue 29 Sep, 10:00', callbackTimezone: 'EAT · Nairobi',
-      linkedAccount: { plan: 'Growth', accountStatus: 'Verification pending' },
-      linkedTransactionOrPayout: null,
-      transcriptExcerpt: {
-        customerLine: 'We submitted our verification documents last week. How long does the review usually take?',
-        agentLine: 'Business verification usually takes three to five business days. I’ve referred this so a specialist can confirm where yours is.'
-      },
-      claimedBy: null, notes: []
-    },
-    {
-      reference: 'RP-4790', priority: 'medium', category: 'account',
-      companyName: 'LagosLedger', contactName: 'Amara Okafor',
-      summary: 'Requested help verifying a new team member.',
-      createdAt: ago(336), status: 'in_progress',
-      contactEmail: 'amara@lagosledger.example',
-      callbackTime: slot(312, 11, 0), callbackTimezone: 'WAT · Lagos',
-      linkedAccount: { plan: 'Growth', accountStatus: 'Active' },
-      linkedTransactionOrPayout: null,
-      transcriptExcerpt: {
-        customerLine: 'We added a new finance manager to our account, but their verification is stuck. Can you help?',
-        agentLine: 'Team member verification is reviewed by our specialists. I’ve created a ticket so someone can check it with you.'
-      },
-      claimedBy: 'Zainab Bello', notes: []
-    },
-    {
-      reference: 'RP-4802', priority: 'low', category: 'dispute',
-      companyName: 'LagosLedger', contactName: 'Amara Okafor',
-      summary: 'Disputed a fee on a completed transaction.',
-      createdAt: ago(70), status: 'closed', resolvedAt: ago(48),
-      contactEmail: 'amara@lagosledger.example',
-      callbackTime: 'Fri 25 Sep, 14:00', callbackTimezone: 'WAT · Lagos',
-      linkedAccount: { plan: 'Growth', accountStatus: 'Active' },
-      linkedTransactionOrPayout: { type: 'Transaction', reference: 'TXN-8876', status: 'Completed', tone: 'ok' },
-      transcriptExcerpt: {
-        customerLine: 'We were charged a fee on TXN-8876 that doesn’t match your published rates.',
-        agentLine: 'Fee disputes are handled by our specialists. I’ve created a ticket and someone will review the charge with you.'
-      },
-      claimedBy: 'Zainab Bello',
-      notes: [{ author: 'Zainab Bello', at: ago(48.2), text: 'Fee matches published FX rate. Sent the breakdown to the customer, who accepted it.' }]
-    }
-  ];
-
-  // Shared cases use the same transcript the customer sees in their call history (shared-cases.js)
-  var SHARED = (window.RELAY_SHARED && window.RELAY_SHARED.transcripts) || {};
-  CASES.forEach(function (c) { if (SHARED[c.reference]) c.transcript = SHARED[c.reference]; });
-
-  // Cases with only a two-line excerpt get a transcript built from it (sample data only)
-  CASES.forEach(function (c) {
-    if (c.transcript || !c.transcriptExcerpt) return;
-    c.transcript = [
-      { speaker: 'agent', at: 2, text: 'Hello, this is RelayPay support. I’m an AI agent and this call is recorded. How can I help?' },
-      { speaker: 'customer', at: 9, text: c.transcriptExcerpt.customerLine },
-      { speaker: 'agent', at: 18, text: 'I can help with that. First I need to confirm the account. What is the registered business name?' },
-      { speaker: 'customer', at: 24, text: c.companyName + '.' },
-      { speaker: 'agent', at: 31, text: 'Thank you, the account is verified.' },
-      { speaker: 'agent', at: 44, text: c.transcriptExcerpt.agentLine },
-      { speaker: 'customer', at: 53, text: 'Okay. ' + c.callbackTime.split(', ')[0].replace(/^\w+ /, '') + ' at ' + c.callbackTime.split(', ')[1] + ' works for a callback.' },
-      { speaker: 'agent', at: 60, text: 'Done. A specialist will call you then. Your reference is ' + c.reference + '.' }
-    ];
-  });
+  var CURRENT_USER = null;
+  var CASES = [];
 
   /* ---------- Helpers ---------- */
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var H = 3600 * 1000;
   var PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
   var PRIORITY_LABEL = { high: 'High', medium: 'Medium', low: 'Low' };
   var STATUS_LABEL = { open: 'Open', in_progress: 'In progress', closed: 'Closed' };
@@ -188,13 +34,16 @@
   }
   var isOpen = function (c) { return c.status !== 'closed'; };
   var find = function (ref) { return CASES.filter(function (c) { return c.reference === ref; })[0]; };
+  function replaceCase(shaped) {
+    var i = CASES.map(function (c) { return c.reference; }).indexOf(shaped.reference);
+    if (i >= 0) CASES[i] = shaped; else CASES.push(shaped);
+  }
 
   /* ---------- UI state ---------- */
-  var ui = { status: 'open', category: 'all', priority: 'all', selected: null, noteOpen: false, pendingClose: {}, forceEmpty: false };
+  var ui = { status: 'open', category: 'all', priority: 'all', selected: null, noteOpen: false, pendingClose: {} };
 
   function visibleCases() {
     return CASES.filter(function (c) {
-      if (ui.forceEmpty) return false;
       var closedNow = c.status === 'closed' && !ui.pendingClose[c.reference];
       if (ui.status === 'open' && closedNow) return false;
       if (ui.status === 'closed' && !closedNow) return false;
@@ -255,10 +104,9 @@
     };
     var open = CASES.filter(function (c) { return cat(c) && (isOpen(c) || ui.pendingClose[c.reference]); }).length;
     var closed = CASES.filter(function (c) { return cat(c) && c.status === 'closed'; }).length;
-    if (ui.forceEmpty) { open = 0; closed = 0; }
     $('[data-count="open"]').textContent = open;
     $('[data-count="closed"]').textContent = closed;
-    $('[data-count="all"]').textContent = ui.forceEmpty ? 0 : CASES.filter(cat).length;
+    $('[data-count="all"]').textContent = CASES.filter(cat).length;
   }
 
   /* ---------- Detail ---------- */
@@ -276,6 +124,7 @@
   }
 
   function fmtClock(sec) {
+    sec = sec || 0;
     var m = Math.floor(sec / 60), s = sec % 60;
     return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
@@ -289,8 +138,7 @@
           '<dl class="case-transcript__form-fields">' +
             '<dt>Name</dt><dd>' + esc(t.name) + '</dd>' +
             '<dt>Email</dt><dd>' + esc(t.email) + '</dd>' +
-            '<dt>Callback time</dt><dd class="tabular">' + esc(t.callbackTime) + ' ' + esc(t.callbackTimezone) + '</dd>' +
-            (t.notes ? '<dt>Note</dt><dd>' + esc(t.notes) + '</dd>' : '') +
+            (t.callbackTime ? '<dt>Callback time</dt><dd class="tabular">' + esc(t.callbackTime) + '</dd>' : '') +
           '</dl>' +
         '</div></li>';
     }
@@ -316,14 +164,15 @@
   function renderDetail() {
     var pane = $('[data-detail]');
     var c = ui.selected && find(ui.selected);
-    if (!c || ui.forceEmpty) {
+    if (!c) {
       pane.innerHTML = '<div class="detail-empty"><p class="detail-empty__text">Select a case to see the details.</p></div>';
       return;
     }
     var statusKey = c.status;
-    var notes = c.notes.length
+    var transcript = c.transcript || [];
+    var notes = (c.notes || []).length
       ? c.notes.map(function (n) {
-          return '<li class="notes-list__item"><span class="notes-list__meta"><span>' + esc(n.author.split(' ')[0]) + '</span><span class="tabular">' + relTime(n.at) + '</span></span><span>' + esc(n.text) + '</span></li>';
+          return '<li class="notes-list__item"><span class="notes-list__meta"><span>' + esc(String(n.author).split(' ')[0]) + '</span><span class="tabular">' + relTime(n.at) + '</span></span><span>' + esc(n.text) + '</span></li>';
         }).join('')
       : '<li class="notes-list__empty">No notes yet.</li>';
 
@@ -354,13 +203,15 @@
           '<section class="detail-section"><h2 class="detail-section__title">Details</h2>' +
             '<dl class="info-grid">' +
               '<div class="info-grid__item info-grid__item--contact"><dt>Contact</dt><dd>' + esc(c.contactName) + '<span class="info-grid__sub">' + esc(c.contactEmail) + '</span></dd></div>' +
-              '<div class="info-grid__item info-grid__item--callback"><dt>Preferred callback</dt><dd class="tabular">' + esc(c.callbackTime) + '<span class="info-grid__sub">' + esc(c.callbackTimezone) + '</span></dd></div>' +
+              '<div class="info-grid__item info-grid__item--callback"><dt>Preferred callback</dt><dd class="tabular">' + esc(c.callbackTime || 'Not provided') + '</dd></div>' +
               '<div class="info-grid__item info-grid__item--account"><dt>Linked account</dt><dd>' + accountHTML(c) + '</dd></div>' +
               '<div class="info-grid__item info-grid__item--linked"><dt>Transaction or payout</dt><dd>' + linkedHTML(c.linkedTransactionOrPayout) + '</dd></div>' +
             '</dl>' +
           '</section>' +
-          '<section class="detail-section"><h2 class="detail-section__title">Full transcript <span class="case-transcript__meta tabular">· ' + c.transcript.length + ' entries · ' + fmtClock(c.transcript[c.transcript.length - 1].at) + '</span></h2>' +
-            '<ol class="case-transcript" tabindex="0" aria-label="Full call transcript">' + c.transcript.map(transcriptItemHTML).join('') + '</ol>' +
+          '<section class="detail-section"><h2 class="detail-section__title">Full transcript <span class="case-transcript__meta tabular">· ' + transcript.length + ' entries' + (transcript.length ? ' · ' + fmtClock(transcript[transcript.length - 1].at) : '') + '</span></h2>' +
+            (transcript.length
+              ? '<ol class="case-transcript" tabindex="0" aria-label="Full call transcript">' + transcript.map(transcriptItemHTML).join('') + '</ol>'
+              : '<p class="detail-empty__text">No transcript recorded for this case.</p>') +
           '</section>' +
           '<section class="detail-section"><h2 class="detail-section__title">Notes</h2><ul class="notes-list">' + notes + '</ul></section>' +
         '</div>' +
@@ -369,21 +220,54 @@
 
   function render() { renderCounts(); renderQueue(); renderDetail(); }
 
-  /* ---------- Actions (local only; swap for API calls) ---------- */
-  function claim(c) { c.claimedBy = CURRENT_USER; c.status = 'in_progress'; }
-  function unclaim(c) { c.claimedBy = null; if (c.status === 'in_progress') c.status = 'open'; }
-  function addNote(c, text) { c.notes.push({ author: CURRENT_USER, at: new Date().toISOString(), text: text }); }
-  function resolve(c) {
-    c.status = 'closed'; c.resolvedAt = new Date().toISOString();
-    if (!c.claimedBy) c.claimedBy = CURRENT_USER;
-    if (ui.status === 'open') {
-      ui.pendingClose[c.reference] = setTimeout(function () { settlePending(); render(); }, 2500);
+  /* ---------- Actions: real API calls via window.RelayAuth.api ---------- */
+  function callApi(path, options) { return window.RelayAuth.api(path, options); }
+
+  async function reload() {
+    try {
+      var data = await callApi('/api/dashboard/cases');
+      CASES.splice(0, CASES.length);
+      Array.prototype.push.apply(CASES, data.cases);
+      if (ui.selected && !find(ui.selected)) ui.selected = null;
+      render();
+    } catch (e) {
+      console.error('Failed to load cases', e);
     }
   }
-  function reopen(c) {
-    if (ui.pendingClose[c.reference]) { clearTimeout(ui.pendingClose[c.reference]); delete ui.pendingClose[c.reference]; }
-    c.status = c.claimedBy ? 'in_progress' : 'open';
-    delete c.resolvedAt;
+
+  async function claim(c) {
+    try {
+      var updated = await callApi('/api/dashboard/cases/' + encodeURIComponent(c.reference) + '/claim', { method: 'PATCH' });
+      replaceCase(updated);
+    } catch (e) { console.error('claim failed', e); }
+  }
+  async function unclaim(c) {
+    try {
+      var updated = await callApi('/api/dashboard/cases/' + encodeURIComponent(c.reference) + '/unclaim', { method: 'PATCH' });
+      replaceCase(updated);
+    } catch (e) { console.error('unclaim failed', e); }
+  }
+  async function addNote(c, text) {
+    try {
+      var updated = await callApi('/api/dashboard/cases/' + encodeURIComponent(c.reference) + '/notes', { method: 'POST', body: { text: text } });
+      replaceCase(updated);
+    } catch (e) { console.error('add note failed', e); }
+  }
+  async function resolve(c) {
+    try {
+      var updated = await callApi('/api/dashboard/cases/' + encodeURIComponent(c.reference) + '/resolve', { method: 'PATCH' });
+      replaceCase(updated);
+      if (ui.status === 'open') {
+        ui.pendingClose[c.reference] = setTimeout(function () { settlePending(); render(); }, 2500);
+      }
+    } catch (e) { console.error('resolve failed', e); }
+  }
+  async function reopen(c) {
+    try {
+      if (ui.pendingClose[c.reference]) { clearTimeout(ui.pendingClose[c.reference]); delete ui.pendingClose[c.reference]; }
+      var updated = await callApi('/api/dashboard/cases/' + encodeURIComponent(c.reference) + '/reopen', { method: 'PATCH' });
+      replaceCase(updated);
+    } catch (e) { console.error('reopen failed', e); }
   }
   function settlePending() {
     Object.keys(ui.pendingClose).forEach(function (ref) {
@@ -410,26 +294,26 @@
     next.focus();
   });
 
-  $('[data-detail]').addEventListener('click', function (e) {
+  $('[data-detail]').addEventListener('click', async function (e) {
     var b = e.target.closest('[data-act]');
     var c = ui.selected && find(ui.selected);
     if (!b || !c) return;
     switch (b.dataset.act) {
-      case 'claim': claim(c); render(); break;
-      case 'reopen': reopen(c); render(); var st = $('.case-detail .status-label'); var ab = $('.action-claim') || $('.action-resolve'); if (ab) ab.focus(); break;
-      case 'unclaim': unclaim(c); render(); var cb = $('.action-claim'); if (cb) cb.focus(); break;
+      case 'claim': await claim(c); render(); break;
+      case 'reopen': await reopen(c); render(); var ab = $('.action-claim') || $('.action-resolve'); if (ab) ab.focus(); break;
+      case 'unclaim': await unclaim(c); render(); var cb = $('.action-claim'); if (cb) cb.focus(); break;
       case 'note': ui.noteOpen = !ui.noteOpen; render(); if (ui.noteOpen) $('#note-input').focus(); break;
       case 'note-cancel': ui.noteOpen = false; render(); $('.action-note').focus(); break;
-      case 'resolve': resolve(c); ui.noteOpen = false; render(); break;
+      case 'resolve': await resolve(c); ui.noteOpen = false; render(); break;
     }
   });
 
-  $('[data-detail]').addEventListener('submit', function (e) {
+  $('[data-detail]').addEventListener('submit', async function (e) {
     e.preventDefault();
     var c = find(ui.selected); var input = $('#note-input');
     var text = input.value.trim();
     if (!text) { input.focus(); return; }
-    addNote(c, text); ui.noteOpen = false; render();
+    await addNote(c, text); ui.noteOpen = false; render();
     $('.action-note').focus();
   });
 
@@ -459,10 +343,12 @@
     render();
   });
 
-  $('[data-proto-empty]').addEventListener('change', function (e) { ui.forceEmpty = e.target.checked; render(); });
-
-  /* ---------- Init: nothing selected ---------- */
+  /* ---------- Init: nothing loaded yet — auth.js calls reload() after sign-in ---------- */
   render();
 
-  window.RelayQueue = { cases: CASES, render: render, setCurrentUser: function (n) { CURRENT_USER = n; render(); }, claim: claim, unclaim: unclaim, reopen: reopen, addNote: addNote, resolve: resolve };
+  window.RelayQueue = {
+    cases: CASES, render: render, reload: reload,
+    setCurrentUser: function (n) { CURRENT_USER = n; render(); },
+    claim: claim, unclaim: unclaim, reopen: reopen, addNote: addNote, resolve: resolve
+  };
 })();

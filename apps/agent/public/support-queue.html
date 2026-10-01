@@ -34,54 +34,6 @@
         <button class="btn btn--primary btn--lg btn--block" type="submit">Log in</button>
       </form>
       <p class="auth-panel__alt">Specialists and admins join by invite from an admin.</p>
-      <p class="auth-panel__proto">Prototype: sample accounts use the password relaypay-demo, for example tunde@relaypay.example.</p>
-    </div>
-  </main>
-</div>
-
-<!-- ============ Auth: Sign up ============ -->
-<div class="auth-screen auth-screen--signup" data-screen="signup" hidden>
-  <header class="auth-screen__header"><span class="wordmark">RelayPay</span><span class="auth-screen__context">Support team</span></header>
-  <main class="auth-screen__main">
-    <div class="auth-panel">
-      <h1 class="auth-panel__title" tabindex="-1" data-screen-heading>Create an account</h1>
-      <form class="auth-form auth-form--signup" data-signup-form novalidate>
-        <div class="form-field" data-field="name">
-          <label class="form-field__label" for="su-name">Full name</label>
-          <input class="form-field__input" id="su-name" type="text" autocomplete="name" aria-describedby="su-name-error">
-          <p class="form-field__error" id="su-name-error" hidden></p>
-        </div>
-        <div class="form-field" data-field="email">
-          <label class="form-field__label" for="su-email">Email</label>
-          <input class="form-field__input" id="su-email" type="email" autocomplete="email" aria-describedby="su-email-error">
-          <p class="form-field__error" id="su-email-error" hidden></p>
-        </div>
-        <div class="form-field" data-field="password">
-          <label class="form-field__label" for="su-password">Password</label>
-          <input class="form-field__input" id="su-password" type="password" autocomplete="new-password" aria-describedby="su-password-hint su-password-error">
-          <p class="form-field__hint" id="su-password-hint">At least 8 characters.</p>
-          <p class="form-field__error" id="su-password-error" hidden></p>
-        </div>
-        <div class="form-field" data-field="confirm">
-          <label class="form-field__label" for="su-confirm">Confirm password</label>
-          <input class="form-field__input" id="su-confirm" type="password" autocomplete="new-password" aria-describedby="su-confirm-error">
-          <p class="form-field__error" id="su-confirm-error" hidden></p>
-        </div>
-        <button class="btn btn--primary btn--lg btn--block" type="submit">Create account</button>
-      </form>
-      <p class="auth-panel__alt">Already have an account? <a href="#" data-go="login">Log in</a></p>
-    </div>
-  </main>
-</div>
-
-<!-- ============ Auth: Pending access (role: user) ============ -->
-<div class="auth-screen auth-screen--pending" data-screen="pending" hidden>
-  <header class="auth-screen__header"><span class="wordmark">RelayPay</span><button class="topbar__logout" type="button" data-logout>Log out</button></header>
-  <main class="auth-screen__main">
-    <div class="pending-access">
-      <h1 class="pending-access__title" tabindex="-1" data-screen-heading>Your account is set up.</h1>
-      <p class="pending-access__text">An admin needs to give you access before you can use the support queue.</p>
-      <p class="pending-access__meta">Signed in as <span data-pending-email>chidi@relaypay.example</span></p>
     </div>
   </main>
 </div>
@@ -181,7 +133,7 @@
     <div class="team__head">
       <div>
         <h1 class="team__title" id="team-title" tabindex="-1">Team</h1>
-        <p class="team__text">Everyone with a RelayPay support account. New sign-ups start as User, with no queue access.</p>
+        <p class="team__text">Everyone with a RelayPay support account. New teammates join by admin invite.</p>
       </div>
       <button class="btn btn--primary action-invite" type="button" data-invite-open>Invite teammate</button>
     </div>
@@ -196,26 +148,6 @@
       <tbody data-team-body></tbody>
     </table>
     <p class="sr-only" aria-live="polite" data-team-announce></p>
-
-    <section class="invite-preview" aria-labelledby="ip-title" data-invite-preview>
-      <div class="invite-preview__head">
-        <h2 class="invite-preview__title" id="ip-title">Invite email preview</h2>
-        <span class="invite-preview__tag">Prototype mockup</span>
-      </div>
-      <div class="invite-email">
-        <dl class="invite-email__meta">
-          <div><dt>From</dt><dd>RelayPay support &lt;no-reply@relaypay.example&gt;</dd></div>
-          <div><dt>To</dt><dd data-ip-to>ngozi@relaypay.example</dd></div>
-          <div><dt>Subject</dt><dd data-ip-subject>You're invited to RelayPay support</dd></div>
-        </dl>
-        <div class="invite-email__body">
-          <p class="wordmark invite-email__wordmark">RelayPay</p>
-          <p class="invite-email__line" data-ip-line>Tunde Adeyemi invited you to join RelayPay support as a Specialist.</p>
-          <button class="btn btn--primary btn--lg invite-email__cta" type="button" data-ip-cta>Set your password</button>
-          <p class="invite-email__foot" data-ip-foot>This link expires in 7 days. If you weren't expecting this invite, you can ignore this email.</p>
-        </div>
-      </div>
-    </section>
   </div>
 </section>
 </div>
@@ -233,7 +165,7 @@
       <div class="form-field" data-field="email">
         <label class="form-field__label" for="invite-email">Email</label>
         <input class="form-field__input" id="invite-email" type="email" autocomplete="off" aria-describedby="invite-email-hint invite-email-error">
-        <p class="form-field__hint" id="invite-email-hint">Prototype accepts any email. In production, only work emails will be accepted.</p>
+        <p class="form-field__hint" id="invite-email-hint">They'll get a real email with a link to set their password.</p>
         <p class="form-field__error" id="invite-email-error" hidden></p>
       </div>
       <div class="form-field" data-field="role">
@@ -286,22 +218,7 @@
   </div>
 </div>
 
-<!-- Prototype-only control: remove when wired to real data -->
-<div class="proto-control">
-  <span class="proto-control__tag">Prototype</span>
-  <label>View as
-    <select class="proto-control__select" data-proto-view>
-      <option value="logged-out">Logged out</option>
-      <option value="customer">Customer (logged in)</option>
-      <option value="specialist">Specialist</option>
-      <option value="admin" selected>Admin</option>
-    </select>
-  </label>
-  <label data-proto-empty-wrap><input type="checkbox" data-proto-empty> Show empty queue</label>
-  <button class="proto-control__btn" type="button" data-proto-roles hidden>Apply sample role change</button>
-</div>
-
-<script src="shared-cases.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="queue.js"></script>
 <script src="auth.js"></script>
 </body>

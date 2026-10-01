@@ -72,3 +72,87 @@
   was verified against its actual published source rather than assumed. The one thing that
   cannot be verified without a live account is Vapi's actual runtime behavior calling our
   endpoints.
+- Real bug found during first live Vapi testing (not a Stage 8 change): every route handler's
+  async body ran with only a narrow inner try/catch (around the query() loop in customLlm.ts;
+  none at all in events.ts/contactRoutes.ts). Express 4 does not catch a rejected promise from
+  an async handler, so anything thrown outside that narrow block — a Supabase hiccup, a bad
+  request — became an unhandled rejection, and Node kills the whole process on those by
+  default. That took the entire backend down for every other in-progress call, not just the
+  one bad request. Fixed by wrapping each route's full handler body in try/catch (respond
+  500/close the stream on failure instead of crashing), plus a process-level
+  unhandledRejection/uncaughtException safety net in index.ts as a last resort. Verified: a
+  real turn through the live tunnel completed normally and the process was still running
+  and answering afterward.
+- First live Vapi test call (a real, duplicated cohort assistant, pointed at a local
+  Cloudflare quick tunnel) surfaced a genuine Vapi-side gotcha worth remembering for the real
+  deployment: **Custom LLM authentication is controlled by a specific credential type**, not
+  by the generic "HTTP Headers" field on the assistant, and not by the "Bearer Token"
+  credential type either (that one is for the separate Webhook Server / tools-and-events
+  section, which is a different integration point entirely and looks confusingly similar in
+  the UI). Both wrong attempts made Vapi send a literal placeholder string
+  (`Bearer no-custom-llm-key-provided`) as the Authorization header instead of erroring
+  helpfully, which made the wrong-credential-type diagnosis take three attempts (visible in
+  the backend's own request logs at the time). The fix: create a credential of type
+  **"Custom LLM"** specifically (a plain API Key field, no OAuth2 needed), attach only that
+  credential's ID to the assistant's `credentialIds`, and leave the Custom LLM URL field's
+  own auth/API-key inputs blank. Confirmed end-to-end: a real voice call reached the deployed
+  backend, called `search_knowledge_base` for real, and was logged correctly in Supabase with
+  the right `answer_type`/`confidence` tag. Deployment target is Render, not Railway as
+  implementation.md's Phase 6 assumes (the student's choice, based on prior familiarity) —
+  the same Custom LLM credential and URL-path convention (`<base>/vapi` so Vapi's
+  `/chat/completions` append lands on our real `/vapi/chat/completions` route) carries over
+  unchanged to a Render URL.
+- Phase 8.3's email notification was built against **Gmail SMTP via `nodemailer`**, not Resend
+  as `implementation.md` originally sketched — a later choice, made once real email became a
+  requirement rather than a stretch goal. Gmail requires an **App Password** (2-Step
+  Verification on the sending account), not the account's normal password, and rejects any
+  `From` address other than the authenticated account itself. Gmail SMTP tops out around
+  500 sends/day on a regular account (2000/day on Workspace) — fine for support-ticket volume,
+  not for anything approaching marketing-scale sends.
+- Five email triggers now exist: new escalation → internal team, escalation created →
+  customer confirmation, every call ending → internal summary (+ customer, when an email is
+  resolvable) with the full transcript and any submitted contact-form data, a staff role
+  change → that staff member, and a case being resolved → the customer. All five are
+  best-effort side effects — every send is wrapped so a Gmail failure (bad credentials, an
+  outage) never blocks or fails the underlying operation (the escalation/ticket row, the call
+  finalization, the role change, the resolve action all already committed by the time the
+  email is attempted).
+- Staff **invite** emails deliberately still go through Supabase Auth's own built-in
+  `inviteUserByEmail` flow, not the new Gmail mailer — the user only asked for a role-*change*
+  notification, and building a second, custom invite-token flow just to route that one email
+  through Gmail too wasn't worth the extra surface area. This means invite emails are subject
+  to Supabase's own rate limits/sender config, separate from Gmail's.
+- Phase 8.1/8.2 (real dashboard backend) got built alongside the email work, since two of the
+  five requested email scenarios (role-change, resolved) had no real event to trigger from
+  otherwise — `queue.js`/`auth.js` were previously a pure frontend mock with hardcoded arrays
+  and zero `fetch()` calls anywhere. `support_tickets.assigned_to`/`escalations.assigned_to`
+  changed from free-text to `uuid references profiles(id)`, safe only because neither column
+  had ever actually been populated by any existing code path. A new `case_notes` table backs
+  the multi-entry note thread `queue.js` already rendered but had nowhere real to store.
+- RLS policies were added on `profiles`/`case_notes` (Postgres's classic self-reference
+  recursion avoided via a `security definer` `is_admin()` function) mostly as defense in depth:
+  the actual read/write path for the dashboard is the agent backend's own Express API, using
+  the same service-role Supabase client every other tool already uses, which bypasses RLS
+  entirely. RLS only matters here if something ever queries these tables directly with the
+  anon key.
+- The staff dashboard's public self-signup form (creating a no-access `'user'` role) and the
+  "prototype: view as" dev switcher were both removed once real Supabase Auth login existed —
+  a real backend means staff accounts only get created via admin invite, and the switcher was
+  scaffolding for a state that no longer needs faking.
+- Known remaining gaps: `case_notes` entries can't be edited or deleted once posted; there's
+  still no audit log of who viewed a given customer's contact details; and the "leave zero
+  admins" guard on role-change/remove-staff is a simple count check, not a transaction-level
+  lock, so a true race between two admins acting simultaneously isn't fully closed.
+- `auth.js`'s invite-acceptance flow (parsing `#type=invite`/`#type=recovery` off a Supabase
+  email link, then `supabase.auth.updateUser({ password })`) is written against
+  `@supabase/supabase-js@2`'s documented `detectSessionInUrl` behavior but has not been
+  exercised against a real Supabase project's invite email yet — same category of gap the
+  Vapi Web SDK work already called out (verified against real source/docs, not yet against a
+  live send). Do this for real once `GMAIL_USER`/`GMAIL_APP_PASSWORD`/a real Supabase project
+  are in place: invite a specialist, click the email link, confirm the set-password screen
+  gets the right name/email/role and actually signs them in afterward.
+- Migration `0008_dashboard_backend.sql` was written and the code built against it, but not
+  yet applied to the live Supabase project from this environment — `supabase db push` needs
+  interactive DB-password input this non-interactive session can't provide. Apply it (or paste
+  it into the Supabase SQL editor) before any of Phase 8's endpoints will work against real
+  data.

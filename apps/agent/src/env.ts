@@ -25,6 +25,14 @@ export interface Env {
   // GET /api/config so the Vapi Web SDK can initialize (Stage 8).
   VAPI_PUBLIC_KEY: string;
   VAPI_ASSISTANT_ID: string;
+  // Also browser-exposed via GET /api/config — the anon key is safe
+  // client-side by design (RLS governs what it can reach), unlike
+  // SUPABASE_SERVICE_ROLE_KEY above, which never leaves the server.
+  SUPABASE_ANON_KEY: string;
+  // Gmail SMTP, for the escalation/call-summary/role-change/resolved emails.
+  GMAIL_USER: string;
+  GMAIL_APP_PASSWORD: string;
+  SUPPORT_TEAM_EMAIL: string;
 }
 
 const REQUIRED_KEYS = [
@@ -38,6 +46,10 @@ const REQUIRED_KEYS = [
   "VAPI_SERVER_SECRET",
   "VAPI_PUBLIC_KEY",
   "VAPI_ASSISTANT_ID",
+  "SUPABASE_ANON_KEY",
+  "GMAIL_USER",
+  "GMAIL_APP_PASSWORD",
+  "SUPPORT_TEAM_EMAIL",
 ] as const;
 
 let cachedEnv: Env | null = null;
@@ -61,7 +73,11 @@ export function getEnv(): Env {
     VAPI_SERVER_SECRET: process.env.VAPI_SERVER_SECRET!,
     VAPI_PUBLIC_KEY: process.env.VAPI_PUBLIC_KEY!,
     VAPI_ASSISTANT_ID: process.env.VAPI_ASSISTANT_ID!,
-    // Railway sets this; read it, don't hardcode.
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY!,
+    GMAIL_USER: process.env.GMAIL_USER!,
+    GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD!,
+    SUPPORT_TEAM_EMAIL: process.env.SUPPORT_TEAM_EMAIL!,
+    // Render sets this; read it, don't hardcode.
     PORT: Number(process.env.PORT ?? 3000),
   };
 

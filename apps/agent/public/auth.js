@@ -1,17 +1,11 @@
-/* RelayPay Support — auth, roles and team (prototype only; no backend).
-   Replace USERS and the functions below with real auth/API calls. */
+/* RelayPay Support — auth, roles and team.
+   Real Supabase Auth + the /api/dashboard/* endpoints in apps/agent/src/dashboard/routes.ts.
+   Staff accounts only get created via admin invite (no public self-signup);
+   role is stored server-side in the `profiles` table. */
 (function () {
   'use strict';
 
-  /* ---------- Sample data ---------- */
-  // role: 'user' | 'specialist' | 'admin'   status: 'active' | 'invited'
-  var USERS = [
-    { name: 'Tunde Adeyemi', email: 'tunde@relaypay.example', role: 'admin', status: 'active', password: 'relaypay-demo', invitedBy: null },
-    { name: 'Zainab Bello', email: 'zainab@relaypay.example', role: 'specialist', status: 'active', password: 'relaypay-demo', invitedBy: 'Tunde Adeyemi' },
-    { name: 'Ngozi Adaeze', email: 'ngozi@relaypay.example', role: 'specialist', status: 'invited', password: null, invitedBy: 'Tunde Adeyemi' }
-  ];
-
-  var ROLE_LABEL = { user: 'User', specialist: 'Specialist', admin: 'Admin' };
+  var ROLE_LABEL = { specialist: 'Specialist', admin: 'Admin' };
   var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
@@ -21,22 +15,72 @@
     });
   };
   var article = function (role) { return role === 'admin' ? 'an ' : 'a '; };
+
+  var TEAM = [];
   var findUser = function (email) {
     var e = String(email || '').trim().toLowerCase();
-    return USERS.filter(function (u) { return u.email.toLowerCase() === e; })[0];
+    return TEAM.filter(function (u) { return u.email.toLowerCase() === e; })[0];
   };
+  function mapProfile(p) {
+    return {
+      id: p.id,
+      email: p.email,
+      name: p.fullName,
+      role: p.role,
+      status: p.status,
+      invitedBy: p.invitedByName,
+      roleChanged: p.roleChanged ? { date: new Date(p.roleChanged.at), by: p.roleChanged.by } : null,
+    };
+  }
 
-  var ui = { user: null, view: 'app', tab: 'queue', invitee: null, preview: null, editing: null, newRow: null, teamTab: 'admin', roleMenu: null, pending: null };
+  var ui = { user: null, view: 'app', tab: 'queue', invitee: null, editing: null, newRow: null, teamTab: 'admin', roleMenu: null, pending: null };
   var TAB_ORDER = ['admin', 'specialist'];
   var fmtDate = function (d) { return d.getDate() + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]; };
-  var possessive = function (n) { return /s$/i.test(n) ? n + '\u2019' : n + '\u2019s'; };
+  var possessive = function (n) { return /s$/i.test(n) ? n + '’' : n + '’s'; };
+
+  /* ---------- Supabase client + API helper ---------- */
+  var supabaseClient = null;
+  async function initSupabaseClient() {
+    var res = await fetch('/api/config');
+    var config = await res.json();
+    supabaseClient = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  }
+
+  async function api(path, options) {
+    options = options || {};
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    var sessionResult = await supabaseClient.auth.getSession();
+    var session = sessionResult.data && sessionResult.data.session;
+    if (session) headers['Authorization'] = 'Bearer ' + session.access_token;
+
+    var res = await fetch(path, {
+      method: options.method || 'GET',
+      headers: headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+    var data = null;
+    try { data = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok) {
+      var err = new Error((data && data.error) || 'request_failed');
+      err.status = res.status; err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  async function fetchMe() {
+    try { return (await api('/api/dashboard/me')).profile; }
+    catch (e) { return null; }
+  }
+  async function fetchTeam() {
+    var data = await api('/api/dashboard/team');
+    return data.team.map(mapProfile);
+  }
 
   /* ---------- Screens ---------- */
   function show(view) {
     ui.view = view;
     $$('[data-screen]').forEach(function (el) { el.hidden = el.dataset.screen !== view; });
-    $('[data-proto-empty-wrap]').hidden = view !== 'app' || ui.tab !== 'queue';
-    syncProtoRoles();
     var h = $('[data-screen="' + view + '"] [data-screen-heading]');
     if (h) h.focus({ preventScroll: true });
     window.scrollTo(0, 0);
@@ -48,30 +92,29 @@
     $$('[data-tab]').forEach(function (b) { b.setAttribute('aria-current', b.dataset.tab === t ? 'page' : 'false'); });
     $$('[data-queue-only]').forEach(function (el) { el.hidden = t !== 'queue'; });
     $('[data-team-view]').hidden = t !== 'team';
-    $('[data-proto-empty-wrap]').hidden = t !== 'queue' || ui.view !== 'app';
-    syncProtoRoles();
-    if (t === 'team') { ui.editing = null; ui.roleMenu = null; renderTeam(); renderPreview(); }
+    if (t === 'team') {
+      ui.editing = null; ui.roleMenu = null;
+      fetchTeam().then(function (team) { TEAM = team; renderTeam(); }).catch(function (e) {
+        console.error('Failed to load team', e);
+      });
+    }
   }
 
-  function signIn(user, opts) {
+  function signIn(profile, opts) {
     opts = opts || {};
-    ui.user = user;
-    delete user.upgraded;
-    $$('[data-current-user]').forEach(function (el) { el.textContent = user.name; });
-    $('[data-pending-email]').textContent = user.email;
-    if (window.RelayQueue) window.RelayQueue.setCurrentUser(user.name);
-    $('[data-tab="team"]').hidden = user.role !== 'admin';
-    syncProto();
-    if (user.role === 'user') { show('pending'); return; }
+    ui.user = { id: profile.id, email: profile.email, name: profile.fullName || profile.name, role: profile.role };
+    $$('[data-current-user]').forEach(function (el) { el.textContent = ui.user.name || ui.user.email; });
+    if (window.RelayQueue) window.RelayQueue.setCurrentUser(ui.user.name || ui.user.email);
+    $('[data-tab="team"]').hidden = ui.user.role !== 'admin';
     show('app'); setTab('queue');
-    if (opts.welcome) showWelcome(user.name);
+    if (window.RelayQueue) window.RelayQueue.reload();
+    if (opts.welcome) showWelcome(ui.user.name || ui.user.email);
   }
 
-  function signOut() {
-    ui.user = null; closeInvite(true); closeRole(true); closeRemove(true); resetAuthForms(); syncProto(); show('login');
+  async function signOut() {
+    try { await supabaseClient.auth.signOut(); } catch (e) { /* ignore */ }
+    ui.user = null; closeInvite(true); closeRole(true); closeRemove(true); resetAuthForms(); show('login');
   }
-
-  function syncProto() { $('[data-proto-view]').value = ui.user ? ui.user.role : 'logged-out'; }
 
   var welcomeTimers = [];
   function showWelcome(name) {
@@ -142,65 +185,60 @@
   var login = bindForm($('[data-login-form]'), {
     email: emailRule('#login-email', 'Enter your email'),
     password: function () { return $('#login-password').value ? '' : 'Enter your password'; }
-  }, function () {
-    var u = findUser(val('#login-email'));
-    if (!u || u.status !== 'active' || u.password !== $('#login-password').value) {
+  }, async function () {
+    var email = val('#login-email'), password = $('#login-password').value;
+    var signInResult = await supabaseClient.auth.signInWithPassword({ email: email, password: password });
+    var me = signInResult.error ? null : await fetchMe();
+    if (!me) {
       loginErr.hidden = false;
       $('#login-password').value = '';
       $('#login-password').focus();
       return;
     }
-    loginErr.hidden = true; login.reset(); signIn(u);
+    loginErr.hidden = true; login.reset(); signIn(me);
   });
   $('[data-login-form]').addEventListener('input', function () { loginErr.hidden = true; });
 
-  /* Sign up — always creates a 'user' */
-  var signup = bindForm($('[data-signup-form]'), {
-    name: function () { return val('#su-name').length < 2 ? 'Enter your full name' : ''; },
-    email: function () {
-      var m = emailRule('#su-email', 'Enter your email')();
-      if (m) return m;
-      return findUser(val('#su-email')) ? 'An account with this email already exists. Log in instead.' : '';
-    },
-    password: passwordRule('#su-password'),
-    confirm: confirmRule('#su-password', '#su-confirm')
-  }, function () {
-    var u = { name: val('#su-name'), email: val('#su-email'), role: 'user', status: 'active', password: $('#su-password').value, invitedBy: null };
-    USERS.push(u); signup.reset(); signIn(u);
-  });
-
-  /* Set password — from invite */
+  /* Set password — from an invite or password-reset link */
   var setPw = bindForm($('[data-setpw-form]'), {
     name: function () { return $('[data-sp-name-field]').hidden ? '' : (val('#sp-name').length < 2 ? 'Enter your full name' : ''); },
     password: passwordRule('#sp-password'),
     confirm: confirmRule('#sp-password', '#sp-confirm')
-  }, function () {
+  }, async function () {
     var u = ui.invitee;
-    if (!u.name) u.name = val('#sp-name');
-    u.password = $('#sp-password').value; u.status = 'active';
+    var password = $('#sp-password').value;
+    var needName = $('[data-sp-name-field]').hidden === false;
+    var { error } = await supabaseClient.auth.updateUser({ password: password });
+    if (error) return;
+    if (needName) {
+      try { await api('/api/dashboard/team/' + encodeURIComponent(u.id) + '/name', { method: 'PATCH', body: { name: val('#sp-name') } }); }
+      catch (e) { /* non-fatal — they can rename later from Team */ }
+    }
     ui.invitee = null; setPw.reset();
-    signIn(u, { welcome: true });
+    var me = await fetchMe();
+    signIn(me || u, { welcome: true });
   });
 
   function openSetPassword(u) {
-    ui.invitee = u; ui.user = null; closeInvite(true); syncProto(); setPw.reset();
-    var needName = !u.name;
+    ui.invitee = u; ui.user = null;
+    var needName = !u.fullName && !u.name;
     $('[data-sp-name-row]').hidden = needName;
-    $('[data-sp-name]').textContent = u.name || '';
+    $('[data-sp-name]').textContent = u.fullName || u.name || '';
     $('[data-sp-email]').textContent = u.email;
-    $('[data-sp-role]').textContent = ROLE_LABEL[u.role];
+    $('[data-sp-role]').textContent = ROLE_LABEL[u.role] || u.role;
     $('[data-sp-name-field]').hidden = !needName;
+    setPw.reset();
     show('set-password');
   }
 
-  function resetAuthForms() { login.reset(); signup.reset(); loginErr.hidden = true; }
+  function resetAuthForms() { login.reset(); loginErr.hidden = true; }
 
   /* ---------- Team table ---------- */
   var PENCIL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L5 14H2v-3z"/></svg>';
 
   function roleMenuHtml(u) {
     var open = ui.roleMenu === u.email;
-    var opts = TAB_ORDER.filter(function (r) { return r !== 'user' && r !== u.role; });
+    var opts = TAB_ORDER.filter(function (r) { return r !== u.role; });
     return '<div class="role-change">' +
       '<button class="link-quiet action-change-role" type="button" data-act="role-menu" aria-haspopup="menu" aria-expanded="' + open + '">Change role</button>' +
       (open ? '<div class="role-menu" role="menu" aria-label="Change ' + esc(possessive(u.name || u.email)) + ' role to">' +
@@ -212,19 +250,19 @@
 
   function renderTeam() {
     TAB_ORDER.forEach(function (r) {
-      $('[data-team-count="' + r + '"]').textContent = USERS.filter(function (u) { return u.role === r; }).length;
+      $('[data-team-count="' + r + '"]').textContent = TEAM.filter(function (u) { return u.role === r; }).length;
       var t = $('[data-team-tab="' + r + '"]'), on = r === ui.teamTab;
       t.setAttribute('aria-selected', on ? 'true' : 'false'); t.tabIndex = on ? 0 : -1;
     });
     $('[data-team-panel]').setAttribute('aria-labelledby', 'tt-' + ui.teamTab);
-    var list = USERS.filter(function (u) { return u.role === ui.teamTab; });
+    var list = TEAM.filter(function (u) { return u.role === ui.teamTab; });
     if (!list.length) {
       var empty = { admin: 'No admins.', specialist: 'No specialists yet. Invite one to get started.' }[ui.teamTab];
       $('[data-team-body]').innerHTML = '<tr class="team-row team-row--empty"><td class="team-row__cell team-row__cell--empty" colspan="6">' + empty + '</td></tr>';
       return;
     }
     $('[data-team-body]').innerHTML = list.map(function (u) {
-      var you = ui.user === u;
+      var you = ui.user && u.id === ui.user.id;
       var nameCell = ui.editing === u.email
         ? '<form class="name-edit" data-name-edit>' +
             '<label class="sr-only" for="name-edit-input">Name</label>' +
@@ -238,16 +276,16 @@
             '<button class="icon-edit action-edit-name" type="button" data-act="edit" aria-label="Edit name for ' + esc(u.name || u.email) + '">' + PENCIL + '</button>' +
           '</div>';
       var status = u.status === 'invited'
-        ? '<span class="status-label status-label--invited">Invited, pending</span><button class="link-quiet team-row__view-invite" type="button" data-act="preview">View invite</button>'
-        : '<span class="status-label status-label--active">Active</span>' + (u.role === 'user' ? '<span class="team-row__sub">No queue access</span>' : '');
+        ? '<span class="status-label status-label--invited">Invited, pending</span>'
+        : '<span class="status-label status-label--active">Active</span>';
       return '<tr class="team-row team-row--' + u.status + ' team-row--' + u.role + (ui.newRow === u.email ? ' team-row--new' : '') + '" data-email="' + esc(u.email) + '">' +
         '<td class="team-row__cell team-row__cell--name">' + nameCell + '</td>' +
         '<td class="team-row__cell team-row__cell--email">' + esc(u.email) + '</td>' +
         '<td class="team-row__cell team-row__cell--role"><span class="role-badge role-badge--' + u.role + '">' + ROLE_LABEL[u.role] + '</span></td>' +
         '<td class="team-row__cell team-row__cell--status"><div class="team-row__status">' + status + '</div></td>' +
         '<td class="team-row__cell team-row__cell--changed">' + (u.roleChanged
-          ? '<span class="team-row__changed">' + esc(fmtDate(u.roleChanged.date)) + ' by ' + esc(u.roleChanged.by) + '</span>'
-          : '<span class="team-row__changed team-row__changed--none" aria-label="Never changed">\u2014</span>') + '</td>' +
+          ? '<span class="team-row__changed">' + esc(fmtDate(u.roleChanged.date)) + ' by ' + esc(u.roleChanged.by || 'unknown') + '</span>'
+          : '<span class="team-row__changed team-row__changed--none" aria-label="Never changed">—</span>') + '</td>' +
         '<td class="team-row__cell team-row__cell--actions">' + (you ? '' : '<div class="team-row__actions">' + roleMenuHtml(u) +
           '<button class="link-quiet link-quiet--danger action-remove" type="button" data-act="remove" aria-label="Remove ' + esc(u.name || u.email) + '">Remove</button></div>') + '</td>' +
       '</tr>';
@@ -257,9 +295,11 @@
   function announce(t) { var a = $('[data-team-announce]'); a.textContent = ''; setTimeout(function () { a.textContent = t; }, 40); }
   function rowFor(email) { return $('.team-row[data-email="' + email.replace(/"/g, '\\"') + '"]'); }
 
-  function saveName(u, name) {
+  async function saveName(u, name) {
+    await api('/api/dashboard/team/' + encodeURIComponent(u.id) + '/name', { method: 'PATCH', body: { name: name } });
     u.name = name;
-    if (ui.user === u) {
+    if (ui.user && ui.user.id === u.id) {
+      ui.user.name = name;
       $$('[data-current-user]').forEach(function (el) { el.textContent = name; });
       if (window.RelayQueue) window.RelayQueue.setCurrentUser(name);
     }
@@ -283,10 +323,6 @@
         var input = $('#name-edit-input'); input.focus(); input.select(); break;
       case 'cancel-edit':
         ui.editing = null; renderTeam(); $('.action-edit-name', rowFor(u.email)).focus(); break;
-      case 'preview':
-        ui.preview = u; renderPreview();
-        var view = $('[data-team-view]'); view.scrollTop = $('[data-invite-preview]').offsetTop - 24;
-        $('[data-ip-cta]').focus({ preventScroll: true }); break;
     }
   });
   teamBody.addEventListener('submit', function (e) {
@@ -294,9 +330,13 @@
     var row = e.target.closest('.team-row'), u = findUser(row.dataset.email);
     var input = $('#name-edit-input'), v = input.value.trim();
     if (!v) { input.setAttribute('aria-invalid', 'true'); $('#name-edit-error').hidden = false; input.focus(); return; }
-    saveName(u, v); ui.editing = null; renderTeam(); renderPreview();
-    announce('Name updated to ' + v);
-    $('.action-edit-name', rowFor(u.email)).focus();
+    saveName(u, v).then(function () {
+      ui.editing = null; renderTeam();
+      announce('Name updated to ' + v);
+      $('.action-edit-name', rowFor(u.email)).focus();
+    }).catch(function () {
+      $('#name-edit-error').textContent = 'Could not save — try again.'; $('#name-edit-error').hidden = false;
+    });
   });
   teamBody.addEventListener('keydown', function (e) {
     if (e.target.classList.contains('role-menu__item') && /^(ArrowDown|ArrowUp)$/.test(e.key)) {
@@ -338,14 +378,14 @@
   }
 
   /* ---------- Change role (confirm step) ---------- */
-  var roleModal = $('[data-role-modal]'), roleScrim = $('[data-role-scrim]'), roleOpener = null;
+  var roleModal = $('[data-role-modal]'), roleScrim = $('[data-role-scrim]'), roleOpener = null, roleBusy = false;
   function openRole(u, role) {
     ui.pending = { user: u, role: role };
     roleOpener = $('.action-change-role', rowFor(u.email));
     var n = u.name || u.email, label = ROLE_LABEL[role];
     $('[data-role-title]').textContent = 'Change ' + possessive(n) + ' role to ' + label + '?';
-    $('[data-role-change]').innerHTML = '<span class="role-badge role-badge--' + u.role + '">' + ROLE_LABEL[u.role] + '</span><span class="role-modal__arrow" aria-hidden="true">\u2192</span><span class="role-badge role-badge--' + role + '">' + label + '</span>';
-    $('[data-role-text]').textContent = n + ' will get an email letting them know their role changed and who changed it. (Email notifications aren\u2019t built yet in this prototype.)';
+    $('[data-role-change]').innerHTML = '<span class="role-badge role-badge--' + u.role + '">' + ROLE_LABEL[u.role] + '</span><span class="role-modal__arrow" aria-hidden="true">→</span><span class="role-badge role-badge--' + role + '">' + label + '</span>';
+    $('[data-role-text]').textContent = n + ' will get an email letting them know their role changed and who changed it.';
     roleModal.hidden = false; roleScrim.hidden = false;
     $('[data-role-confirm]').focus();
   }
@@ -354,17 +394,24 @@
     roleModal.hidden = true; roleScrim.hidden = true; ui.pending = null;
     if (!silent && roleOpener && document.contains(roleOpener)) roleOpener.focus();
   }
-  function applyRole(u, role, by) {
-    u.role = role;
-    u.roleChanged = { date: new Date(), by: by };
-  }
-  $('[data-role-confirm]').addEventListener('click', function () {
-    var p = ui.pending; if (!p) return;
-    applyRole(p.user, p.role, ui.user.name);
-    closeRole(true);
-    ui.teamTab = p.role; flashRow(p.user.email); renderPreview();
-    $('.action-change-role', rowFor(p.user.email)).focus();
-    announce((p.user.name || p.user.email) + ' is now ' + article(p.role) + ROLE_LABEL[p.role] + '. Showing ' + ROLE_LABEL[p.role] + 's.');
+  $('[data-role-confirm]').addEventListener('click', async function () {
+    var p = ui.pending; if (!p || roleBusy) return;
+    roleBusy = true;
+    try {
+      await api('/api/dashboard/team/' + encodeURIComponent(p.user.id) + '/role', { method: 'PATCH', body: { role: p.role } });
+      p.user.role = p.role;
+      p.user.roleChanged = { date: new Date(), by: ui.user.name || ui.user.email };
+      closeRole(true);
+      ui.teamTab = p.role; flashRow(p.user.email);
+      $('.action-change-role', rowFor(p.user.email)).focus();
+      announce((p.user.name || p.user.email) + ' is now ' + article(p.role) + ROLE_LABEL[p.role] + '. Showing ' + ROLE_LABEL[p.role] + 's.');
+    } catch (e) {
+      $('[data-role-text]').textContent = e.data && e.data.error === 'would_remove_last_admin'
+        ? 'This would leave RelayPay support with no admins, so this change was not made.'
+        : 'Could not change this role — try again.';
+    } finally {
+      roleBusy = false;
+    }
   });
   $$('[data-role-cancel]').forEach(function (b) { b.addEventListener('click', function () { closeRole(); }); });
   roleScrim.addEventListener('click', function () { closeRole(); });
@@ -379,7 +426,7 @@
   });
 
   /* ---------- Remove person (confirm step) ---------- */
-  var rmModal = $('[data-remove-modal]'), rmScrim = $('[data-remove-scrim]'), rmOpener = null, rmUser = null;
+  var rmModal = $('[data-remove-modal]'), rmScrim = $('[data-remove-scrim]'), rmOpener = null, rmUser = null, rmBusy = false;
   function claimedOpen(u) {
     var cases = (window.RelayQueue && window.RelayQueue.cases) || [];
     return u.name ? cases.filter(function (c) { return c.claimedBy === u.name && c.status !== 'closed'; }) : [];
@@ -389,8 +436,8 @@
     var n = u.name || u.email, open = claimedOpen(u);
     $('[data-remove-title]').textContent = 'Remove ' + n + ' from RelayPay support?';
     var t = u.status === 'invited'
-      ? 'Their invite link will stop working and they\u2019ll be removed from the team.'
-      : 'They\u2019ll lose access immediately and won\u2019t be able to log in.';
+      ? 'Their invite link will stop working and they’ll be removed from the team.'
+      : 'They’ll lose access immediately and won’t be able to log in.';
     if (open.length) t += ' ' + (open.length === 1 ? '1 open case they claimed (' + open[0].reference + ') goes' : open.length + ' open cases they claimed go') + ' back to the queue unclaimed.';
     if (u.status !== 'invited') t += ' Resolved cases and notes keep their name.';
     $('[data-remove-text]').textContent = t;
@@ -402,17 +449,25 @@
     rmModal.hidden = true; rmScrim.hidden = true; rmUser = null;
     if (!silent && rmOpener && document.contains(rmOpener)) rmOpener.focus();
   }
-  $('[data-remove-confirm]').addEventListener('click', function () {
-    var u = rmUser; if (!u) return;
-    claimedOpen(u).forEach(function (c) { window.RelayQueue.unclaim(c); });
-    if (window.RelayQueue) window.RelayQueue.render();
-    USERS.splice(USERS.indexOf(u), 1);
-    if (ui.preview === u) ui.preview = null;
-    closeRemove(true);
-    renderTeam(); renderPreview(); syncProtoRoles();
-    var next = $('.team-row .action-remove') || $('[data-team-tab="' + ui.teamTab + '"]');
-    next.focus();
-    announce((u.name || u.email) + ' was removed from the team.');
+  $('[data-remove-confirm]').addEventListener('click', async function () {
+    var u = rmUser; if (!u || rmBusy) return;
+    rmBusy = true;
+    try {
+      await api('/api/dashboard/team/' + encodeURIComponent(u.id), { method: 'DELETE' });
+      TEAM.splice(TEAM.indexOf(u), 1);
+      closeRemove(true);
+      renderTeam();
+      if (window.RelayQueue) window.RelayQueue.reload();
+      var next = $('.team-row .action-remove') || $('[data-team-tab="' + ui.teamTab + '"]');
+      next.focus();
+      announce((u.name || u.email) + ' was removed from the team.');
+    } catch (e) {
+      $('[data-remove-text]').textContent = e.data && e.data.error === 'would_remove_last_admin'
+        ? 'This would leave RelayPay support with no admins, so this person was not removed.'
+        : 'Could not remove this person — try again.';
+    } finally {
+      rmBusy = false;
+    }
   });
   $$('[data-remove-cancel]').forEach(function (b) { b.addEventListener('click', function () { closeRemove(); }); });
   rmScrim.addEventListener('click', function () { closeRemove(); });
@@ -426,33 +481,6 @@
     }
   });
 
-  /* ---------- Invite email preview (mockup) ---------- */
-  function renderPreview() {
-    var p = ui.preview;
-    var u = p && (p.status === 'invited' || p.upgraded) ? p : USERS.filter(function (x) { return x.status === 'invited'; }).pop();
-    var sec = $('[data-invite-preview]');
-    if (!u) { sec.hidden = true; ui.preview = null; return; }
-    sec.hidden = false; ui.preview = u;
-    var role = ROLE_LABEL[u.role], by = u.invitedBy || 'A RelayPay admin';
-    $('[data-ip-to]').textContent = u.email;
-    if (u.upgraded) {
-      $('[data-ip-subject]').textContent = 'You now have access to RelayPay support';
-      $('[data-ip-line]').textContent = by + ' gave you access to RelayPay support as ' + article(u.role) + role + '.';
-      $('[data-ip-cta]').textContent = 'Log in';
-      $('[data-ip-foot]').textContent = 'Use your existing password. If you weren\u2019t expecting this, contact your RelayPay admin.';
-    } else {
-      $('[data-ip-subject]').textContent = 'You\u2019re invited to RelayPay support';
-      $('[data-ip-line]').textContent = by + ' invited you to join RelayPay support as ' + article(u.role) + role + '.';
-      $('[data-ip-cta]').textContent = 'Set your password';
-      $('[data-ip-foot]').textContent = 'This link expires in 7 days. If you weren\u2019t expecting this invite, you can ignore this email.';
-    }
-  }
-  $('[data-ip-cta]').addEventListener('click', function () {
-    var u = ui.preview; if (!u) return;
-    if (u.upgraded) { signOut(); $('#login-email').value = u.email; $('#login-password').focus(); }
-    else openSetPassword(u);
-  });
-
   /* ---------- Invite modal ---------- */
   var modal = $('[data-invite-modal]'), scrim = $('[data-invite-scrim]'), inviteOpener = null;
   var invite = bindForm($('[data-invite-form]'), {
@@ -461,30 +489,25 @@
       if (m) return m;
       var u = findUser(val('#invite-email'));
       if (u && u.status === 'invited') return 'This person already has a pending invite.';
-      if (u && u.role !== 'user') return 'This person is already on the team as ' + article(u.role) + ROLE_LABEL[u.role] + '.';
+      if (u) return 'This person is already on the team as ' + article(u.role) + ROLE_LABEL[u.role] + '.';
       return '';
     },
     role: function () { return ''; }
-  }, function () {
-    var email = val('#invite-email'), role = $('#invite-role').value, u = findUser(email);
-    if (u) { applyRole(u, role, ui.user.name); u.upgraded = true; u.invitedBy = ui.user.name; }
-    else { u = { name: null, email: email, role: role, status: 'invited', password: null, invitedBy: ui.user.name }; USERS.push(u); }
-    closeInvite();
-    ui.preview = u; ui.teamTab = role;
-    flashRow(u.email); renderPreview();
-    announce('Invite sent to ' + email);
+  }, async function () {
+    var email = val('#invite-email'), role = $('#invite-role').value;
+    try {
+      await api('/api/dashboard/team/invite', { method: 'POST', body: { email: email, role: role } });
+      closeInvite();
+      ui.teamTab = role;
+      var team = await fetchTeam(); TEAM = team; renderTeam();
+      var invited = findUser(email);
+      if (invited) flashRow(invited.email);
+      announce('Invite sent to ' + email);
+    } catch (e) {
+      $('[data-invite-note]').textContent = 'Could not send this invite — try again.';
+      $('[data-invite-note]').hidden = false;
+    }
   });
-
-  function updateInviteNote() {
-    var u = findUser(val('#invite-email')), n = $('[data-invite-note]');
-    if (u && u.role === 'user') {
-      var role = ROLE_LABEL[$('#invite-role').value];
-      n.textContent = (u.name || u.email) + ' already has an account. Sending this invite gives them ' + role + ' access.';
-      n.hidden = false;
-    } else n.hidden = true;
-  }
-  $('#invite-email').addEventListener('input', updateInviteNote);
-  $('#invite-role').addEventListener('change', updateInviteNote);
 
   function openInvite() {
     inviteOpener = document.activeElement;
@@ -518,51 +541,39 @@
       if (b.dataset.tab === 'team') $('#team-title').focus({ preventScroll: true });
     });
   });
-  $$('[data-logout]').forEach(function (b) { b.addEventListener('click', signOut); });
-  $$('[data-go]').forEach(function (a) {
-    a.addEventListener('click', function (e) { e.preventDefault(); resetAuthForms(); show(a.dataset.go); });
-  });
+  $$('[data-logout]').forEach(function (b) { b.addEventListener('click', function () { signOut(); }); });
 
-  /* ---------- Prototype: View as ---------- */
-  $('[data-proto-view]').addEventListener('change', function (e) {
-    var v = e.target.value, u;
-    if (v === 'customer') { location.href = 'index.html?as=customer'; return; }
-    if (v === 'logged-out') { signOut(); return; }
-    var firstActive = function (r, pref) {
-      var p = findUser(pref);
-      return p && p.role === r && p.status === 'active' ? p : USERS.filter(function (x) { return x.role === r && x.status === 'active'; })[0];
-    };
-    if (v === 'admin') u = firstActive('admin', 'tunde@relaypay.example');
-    else if (v === 'specialist') u = firstActive('specialist', 'zainab@relaypay.example') ||
-      firstActive('specialist', '') || (function () { var x = { name: 'Emeka Nwosu', email: 'emeka@relaypay.example', role: 'specialist', status: 'active', password: 'relaypay-demo', invitedBy: 'Tunde Adeyemi' }; USERS.push(x); return x; })();
-    else {
-      u = USERS.filter(function (x) { return x.role === 'user' && x.status === 'active'; })[0];
-      if (!u) { u = { name: 'Folake Adebayo', email: 'folake@relaypay.example', role: 'user', status: 'active', password: 'relaypay-demo', invitedBy: null }; USERS.push(u); }
-    }
-    closeInvite(true); closeRole(true); closeRemove(true);
-    signIn(u);
-  });
-
-  /* ---------- Prototype: sample role change (Zainab → Admin) ---------- */
-  var protoRoles = $('[data-proto-roles]');
-  function syncProtoRoles() {
-    var z = findUser('zainab@relaypay.example');
-    protoRoles.hidden = ui.view !== 'app' || ui.tab !== 'team' || !z || z.role === 'admin';
+  /* ---------- Init ---------- */
+  // A Supabase invite/recovery link redirects here with #access_token=...&type=invite
+  // in the URL hash; supabase-js (detectSessionInUrl, on by default) turns that into a
+  // real session before this code runs, so all that's left is recognizing the "type"
+  // and routing to the set-password screen instead of straight into the app.
+  async function handleAuthRedirect() {
+    var hashParams = new URLSearchParams(location.hash.replace(/^#/, ''));
+    var type = hashParams.get('type');
+    if (type !== 'invite' && type !== 'recovery') return false;
+    history.replaceState(null, '', location.pathname + location.search);
+    var me = await fetchMe();
+    if (!me) return false;
+    openSetPassword(me);
+    return true;
   }
-  protoRoles.addEventListener('click', function () {
-    var z = findUser('zainab@relaypay.example'); if (!z) return;
-    applyRole(z, 'admin', ui.user.name);
-    ui.teamTab = 'admin'; flashRow(z.email); syncProtoRoles();
-    announce('Sample role change applied: Zainab Bello is now an Admin.');
-  });
 
-  /* ---------- Init: signed in as admin (or ?as=specialist|admin|logged-out from the voice page) ---------- */
-  var as = new URLSearchParams(location.search).get('as');
-  if (as === 'specialist' || as === 'logged-out') { var vs = $('[data-proto-view]'); vs.value = as; vs.dispatchEvent(new Event('change')); }
-  else signIn(findUser('tunde@relaypay.example'));
+  (async function init() {
+    await initSupabaseClient();
+    if (await handleAuthRedirect()) return;
+
+    var sessionResult = await supabaseClient.auth.getSession();
+    if (sessionResult.data && sessionResult.data.session) {
+      var me = await fetchMe();
+      if (me) { signIn(me); return; }
+    }
+    show('login');
+  })();
 
   window.RelayAuth = {
-    users: USERS, signIn: signIn, signOut: signOut, show: show, setTab: setTab,
-    openSetPassword: openSetPassword, openInvite: openInvite, renderTeam: renderTeam
+    signIn: signIn, signOut: signOut, show: show, setTab: setTab,
+    openSetPassword: openSetPassword, openInvite: openInvite, renderTeam: renderTeam,
+    api: api
   };
 })();

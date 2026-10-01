@@ -2,6 +2,7 @@ import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
 import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
+import { sendEmail } from "../mailer.js";
 
 // Vapi's documented webhook contract: every server message arrives wrapped
 // as { message: { type, call: { id }, endedReason, ... } }. Verify against
@@ -118,7 +119,101 @@ async function handleEndOfCallReport(req: Request, res: Response): Promise<void>
       return;
     }
 
+    // Best-effort: the conversation is already finalized above, so a Gmail
+    // hiccup here must not turn into a 500 for Vapi's webhook retry logic.
+    try {
+      await sendCallSummaryEmail(conversation.conversation_id, callId, status, summary);
+    } catch (emailError) {
+      console.error("vapi/events: failed to send call summary email", emailError);
+    }
+
     res.status(200).json({ received: true });
+}
+
+interface ConversationTurnRow {
+  role: string;
+  transcript: string;
+  turn_index: number;
+}
+
+interface ContactSubmissionRow {
+  name: string;
+  email: string;
+  callback_time: string | null;
+}
+
+async function sendCallSummaryEmail(
+  conversationId: string,
+  callId: string,
+  status: FinalStatus,
+  summary: string
+): Promise<void> {
+  const supabase = getSupabaseClient();
+  const env = getEnv();
+
+  const [{ data: conversation }, { data: turns }, { data: contactSubmission }] = await Promise.all([
+    supabase.from("conversations").select("customer_id").eq("conversation_id", conversationId).maybeSingle(),
+    supabase
+      .from("conversation_turns")
+      .select("role, transcript, turn_index")
+      .eq("conversation_id", conversationId)
+      .order("turn_index", { ascending: true }),
+    supabase
+      .from("contact_submissions")
+      .select("name, email, callback_time")
+      .eq("conversation_id", conversationId)
+      .maybeSingle(),
+  ]);
+
+  const submission = contactSubmission as ContactSubmissionRow | null;
+  let customerEmail = submission?.email ?? null;
+  if (!customerEmail && conversation?.customer_id) {
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("contact_email")
+      .eq("customer_id", conversation.customer_id)
+      .maybeSingle();
+    customerEmail = customer?.contact_email ?? null;
+  }
+
+  const transcriptText =
+    ((turns as ConversationTurnRow[] | null) ?? [])
+      .map((turn) => `[${turn.role}] ${turn.transcript}`)
+      .join("\n") || "(no transcript recorded)";
+
+  const formLines = submission
+    ? [
+        ``,
+        `Contact form submitted:`,
+        `  Name: ${submission.name}`,
+        `  Email: ${submission.email}`,
+        submission.callback_time ? `  Callback time: ${submission.callback_time}` : null,
+      ].filter((line): line is string => line !== null)
+    : [];
+
+  const text = [
+    `Call ${callId} ended.`,
+    `Status: ${status}`,
+    `Summary: ${summary}`,
+    ...formLines,
+    ``,
+    `Transcript:`,
+    transcriptText,
+  ].join("\n");
+
+  const sends: Promise<void>[] = [
+    sendEmail({ to: env.SUPPORT_TEAM_EMAIL, subject: `Call summary — ${callId} (${status})`, text }),
+  ];
+  if (customerEmail) {
+    sends.push(sendEmail({ to: customerEmail, subject: "Your RelayPay support call summary", text }));
+  }
+
+  const results = await Promise.allSettled(sends);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("vapi/events: call summary email failed", result.reason);
+    }
+  }
 }
 
 export function registerVapiEventsRoute(router: Router): void {

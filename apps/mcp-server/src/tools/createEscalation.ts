@@ -5,6 +5,7 @@ import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { getVerifiedCustomerId } from "../lib/verification.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
 import { generateUniqueReference } from "./createSupportTicket.js";
+import { sendEmail } from "../lib/mailer.js";
 
 const CATEGORY_PRIORITY: Record<string, "high" | "medium" | "low"> = {
   compliance: "high",
@@ -37,6 +38,63 @@ type CreateEscalationArgs = {
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Best-effort notification, never the source of truth: the escalation row
+// above is already committed by the time this runs, so a Gmail outage or a
+// bad GMAIL_APP_PASSWORD must not surface as a tool failure to the caller.
+async function notifyEscalationCreated(args: {
+  escalationId: string;
+  priority: string;
+  category: string;
+  reason: string;
+  userName: string;
+  userEmail: string;
+  preferredTime?: string;
+}): Promise<void> {
+  const teamEmail = process.env.SUPPORT_TEAM_EMAIL;
+
+  const internalSend = teamEmail
+    ? sendEmail({
+        to: teamEmail,
+        subject: `[${args.priority.toUpperCase()}] New escalation ${args.escalationId} (${args.category})`,
+        text: [
+          `Escalation ${args.escalationId} was just created.`,
+          ``,
+          `Priority: ${args.priority}`,
+          `Category: ${args.category}`,
+          `Reason: ${args.reason}`,
+          `Contact: ${args.userName} <${args.userEmail}>`,
+          args.preferredTime ? `Preferred callback time: ${args.preferredTime}` : null,
+        ]
+          .filter((line) => line !== null)
+          .join("\n"),
+      })
+    : Promise.resolve();
+
+  const customerSend = sendEmail({
+    to: args.userEmail,
+    subject: `We've received your request — reference ${args.escalationId}`,
+    text: [
+      `Hi ${args.userName},`,
+      ``,
+      `Thanks for reaching out. A specialist will follow up on your ${args.category} request.`,
+      ``,
+      `Reference: ${args.escalationId}`,
+      args.preferredTime ? `Callback time: ${args.preferredTime}` : null,
+      ``,
+      `— RelayPay Support`,
+    ]
+      .filter((line) => line !== null)
+      .join("\n"),
+  });
+
+  const results = await Promise.allSettled([internalSend, customerSend]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("createEscalation: notification email failed", result.reason);
+    }
+  }
+}
 
 async function escalationIdExists(supabase: SupabaseClient, candidate: string): Promise<boolean> {
   const { data } = await supabase
@@ -130,6 +188,16 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
   });
 
   if (error) throw new Error(`escalations insert failed: ${error.message}`);
+
+  await notifyEscalationCreated({
+    escalationId,
+    priority,
+    category: args.category,
+    reason: args.reason,
+    userName,
+    userEmail,
+    preferredTime: args.preferred_time,
+  });
 
   return {
     escalation_id: escalationId,
