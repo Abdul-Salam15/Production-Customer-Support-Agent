@@ -93,17 +93,19 @@
   }
 
   function setTab(t) {
-    if (t === 'team' && (!ui.user || ui.user.role !== 'admin')) t = 'queue';
+    if ((t === 'team' || t === 'audit') && (!ui.user || ui.user.role !== 'admin')) t = 'queue';
     ui.tab = t;
     $$('[data-tab]').forEach(function (b) { b.setAttribute('aria-current', b.dataset.tab === t ? 'page' : 'false'); });
     $$('[data-queue-only]').forEach(function (el) { el.hidden = t !== 'queue'; });
     $('[data-team-view]').hidden = t !== 'team';
+    $('[data-audit-view]').hidden = t !== 'audit';
     if (t === 'team') {
       ui.editing = null; ui.roleMenu = null;
       fetchTeam().then(function (team) { TEAM = team; renderTeam(); }).catch(function (e) {
         console.error('Failed to load team', e);
       });
     }
+    if (t === 'audit') { loadAuditLog(); startAuditPolling(); } else { stopAuditPolling(); }
   }
 
   function signIn(profile, opts) {
@@ -112,6 +114,7 @@
     $$('[data-current-user]').forEach(function (el) { el.textContent = ui.user.name || ui.user.email; });
     if (window.RelayQueue) window.RelayQueue.setCurrentUser(ui.user.name || ui.user.email);
     $('[data-tab="team"]').hidden = ui.user.role !== 'admin';
+    $('[data-tab="audit"]').hidden = ui.user.role !== 'admin';
     // Universal login (/login, /admin or /specialist all show the same form)
     // lands on the role-specific URL once signed in, regardless of which one
     // was used to get here.
@@ -124,6 +127,7 @@
 
   async function signOut() {
     try { await supabaseClient.auth.signOut(); } catch (e) { /* ignore */ }
+    stopAuditPolling();
     ui.user = null; closeInvite(true); closeRole(true); closeRemove(true); resetAuthForms();
     if (location.pathname !== '/login') history.replaceState(null, '', '/login');
     show('login');
@@ -209,7 +213,12 @@
       return;
     }
     loginErr.hidden = true; login.reset();
-    if (who.kind === 'customer') { location.href = '/customer'; return; }
+    if (who.kind === 'customer') {
+      api('/api/customer/login-event', { method: 'POST' }).catch(function () {});
+      location.href = '/customer';
+      return;
+    }
+    api('/api/dashboard/login-event', { method: 'POST' }).catch(function () {});
     signIn(who.profile);
   });
   $('[data-login-form]').addEventListener('input', function () { loginErr.hidden = true; });
@@ -231,6 +240,7 @@
     }
     ui.invitee = null; setPw.reset();
     var me = await fetchMe();
+    api('/api/dashboard/login-event', { method: 'POST' }).catch(function () {});
     signIn(me || u, { welcome: true });
   });
 
@@ -563,6 +573,42 @@
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     }
   });
+
+  /* ---------- Audit log ---------- */
+  var CATEGORY_LABEL = { call: 'Call', tool: 'Tool', case: 'Case', email: 'Email', team: 'Team', account: 'Account' };
+  var auditTimer = null;
+  function fmtAuditTime(iso) {
+    var d = new Date(iso);
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ', ' +
+      d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  function renderAuditLog(events) {
+    var list = $('[data-audit-list]'), empty = $('[data-audit-empty]');
+    if (!events.length) { list.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    list.innerHTML = events.map(function (e) {
+      return '<li class="audit-row audit-row--' + esc(e.category) + '">' +
+        '<span class="audit-row__cat">' + esc(CATEGORY_LABEL[e.category] || e.category) + '</span>' +
+        '<span class="audit-row__msg">' + esc(e.message) + '</span>' +
+        '<span class="audit-row__time tabular">' + fmtAuditTime(e.created_at) + '</span>' +
+      '</li>';
+    }).join('');
+  }
+  async function loadAuditLog() {
+    try {
+      var data = await api('/api/dashboard/audit-log');
+      renderAuditLog(data.events);
+    } catch (e) {
+      console.error('Failed to load audit log', e);
+    }
+  }
+  function startAuditPolling() {
+    stopAuditPolling();
+    auditTimer = setInterval(loadAuditLog, 8000);
+  }
+  function stopAuditPolling() {
+    if (auditTimer) { clearInterval(auditTimer); auditTimer = null; }
+  }
 
   /* ---------- Navigation ---------- */
   $$('[data-tab]').forEach(function (b) {

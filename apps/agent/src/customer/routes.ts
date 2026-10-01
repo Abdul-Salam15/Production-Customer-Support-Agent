@@ -2,6 +2,7 @@ import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../supabaseClient.js";
+import { logAudit } from "../auditLog.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -164,6 +165,8 @@ function registerCustomerAuthRoutes(router: Router): void {
         return;
       }
 
+      void logAudit("account", `New customer account created (${email.trim()}).`);
+
       res.status(200).json({ created: true });
     } catch (error) {
       console.error("customer: signup failed", error);
@@ -173,6 +176,14 @@ function registerCustomerAuthRoutes(router: Router): void {
 
   router.get("/api/customer/me", verifyCustomerSession, (req: Request, res: Response) => {
     res.status(200).json({ account: getCustomerUser(req) });
+  });
+
+  // Fired once by /login right after a fresh sign-in resolves to a customer
+  // account — same reasoning as /api/dashboard/login-event.
+  router.post("/api/customer/login-event", verifyCustomerSession, (req: Request, res: Response) => {
+    const who = getCustomerUser(req);
+    void logAudit("account", `${who.fullName ?? who.email} logged in.`);
+    res.status(200).json({ logged: true });
   });
 
   router.get("/api/customer/calls", verifyCustomerSession, async (req: Request, res: Response) => {

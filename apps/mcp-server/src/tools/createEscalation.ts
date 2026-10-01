@@ -6,6 +6,7 @@ import { getVerifiedCustomerId } from "../lib/verification.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
 import { generateUniqueReference } from "./createSupportTicket.js";
 import { sendEmail } from "../lib/mailer.js";
+import { logAudit } from "../lib/auditLog.js";
 
 const CATEGORY_PRIORITY: Record<string, "high" | "medium" | "low"> = {
   compliance: "high",
@@ -188,6 +189,8 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
   });
 
   if (error) throw new Error(`escalations insert failed: ${error.message}`);
+
+  void logAudit("case", `New ${priority}-priority ${args.category} escalation created (${escalationId}).`);
 
   await notifyEscalationCreated({
     escalationId,

@@ -99,6 +99,7 @@
     <nav class="topbar__tabs" aria-label="Sections">
       <button class="topbar__tab" type="button" data-tab="queue" aria-current="page">Support queue</button>
       <button class="topbar__tab" type="button" data-tab="team">Team</button>
+      <button class="topbar__tab" type="button" data-tab="audit">Audit Logs</button>
     </nav>
   </div>
   <div class="topbar__right">
@@ -166,6 +167,16 @@
       <tbody data-team-body></tbody>
     </table>
     <p class="sr-only" aria-live="polite" data-team-announce></p>
+  </div>
+</section>
+
+<!-- Audit Logs (admin only) -->
+<section class="audit-view" aria-labelledby="audit-title" data-audit-view hidden>
+  <div class="audit">
+    <h1 class="audit__title" id="audit-title" tabindex="-1">Audit Logs</h1>
+    <p class="audit__text">A plain-English record of what's happening across the system — calls, tool lookups, cases, emails, team changes and logins. Updates automatically.</p>
+    <ol class="audit-list" data-audit-list></ol>
+    <p class="audit__empty" data-audit-empty hidden>Nothing logged yet.</p>
   </div>
 </section>
 </div>

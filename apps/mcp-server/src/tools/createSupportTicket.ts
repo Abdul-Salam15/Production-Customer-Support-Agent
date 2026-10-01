@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
+import { logAudit } from "../lib/auditLog.js";
 
 const inputShape = {
   customer_id: z.string().optional(),
@@ -79,6 +80,8 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
   });
 
   if (error) throw new Error(`support_tickets insert failed: ${error.message}`);
+
+  void logAudit("case", `New support ticket created (${ticketId}).`);
 
   return { ticket_id: ticketId, status: "open" };
 }

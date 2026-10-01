@@ -9,6 +9,7 @@ import { createAbortController } from "../session/abort.js";
 import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChunkId } from "./streaming.js";
 import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext } from "../outputGuard.js";
 import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
+import { logAudit } from "../auditLog.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -294,6 +295,7 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     const conversationId = await upsertConversation(callId);
     session = createSession(callId, conversationId);
     prompt = buildPromptFromHistory(body.messages);
+    void logAudit("call", "A new call started.");
   }
 
   const conversationId = session.conversationId;

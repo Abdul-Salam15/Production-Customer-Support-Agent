@@ -307,6 +307,30 @@ select.form-field__input { padding-right: 32px; }
 .team__head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s-4); flex-wrap: wrap; }
 .team__title { font-size: var(--fs-lg); font-weight: var(--fw-medium); color: var(--c-primary); letter-spacing: -0.01em; line-height: 1.2; }
 .team__text { margin-top: var(--s-1); font-size: var(--fs-sm); color: var(--c-text-2); }
+
+.audit-view { height: calc(100vh - var(--topbar-h)); overflow-y: auto; }
+.audit { max-width: 1040px; padding: var(--s-6) var(--s-6) var(--s-7); }
+.audit__title { font-size: var(--fs-lg); font-weight: var(--fw-medium); color: var(--c-primary); letter-spacing: -0.01em; line-height: 1.2; }
+.audit__text { margin-top: var(--s-1); font-size: var(--fs-sm); color: var(--c-text-2); }
+.audit__empty { margin-top: var(--s-5); padding: var(--s-5); border: var(--hairline); border-radius: var(--r-2); background: var(--c-surface); font-size: var(--fs-sm); color: var(--c-text-2); }
+.audit-list {
+  list-style: none; margin: var(--s-5) 0 0; padding: 0;
+  background: var(--c-surface); border: var(--hairline); border-radius: var(--r-2);
+}
+.audit-row {
+  display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; align-items: baseline; gap: var(--s-4);
+  padding: var(--s-2) var(--s-4); font-size: var(--fs-sm);
+}
+.audit-row + .audit-row { border-top: var(--hairline); }
+.audit-row__cat { font-size: var(--fs-2xs); font-weight: var(--fw-medium); color: var(--c-text-2); text-transform: uppercase; letter-spacing: 0.02em; }
+.audit-row--call .audit-row__cat { color: var(--c-accent); }
+.audit-row--tool .audit-row__cat { color: var(--c-text-2); }
+.audit-row--case .audit-row__cat { color: var(--c-medium); }
+.audit-row--email .audit-row__cat { color: var(--c-success); }
+.audit-row--team .audit-row__cat { color: var(--c-primary); }
+.audit-row--account .audit-row__cat { color: var(--c-accent); }
+.audit-row__msg { color: var(--c-text); text-wrap: pretty; }
+.audit-row__time { font-size: var(--fs-2xs); color: var(--c-text-3); white-space: nowrap; }
 .team-table { width: 100%; margin-top: var(--s-5); border-collapse: collapse; background: var(--c-surface); border: var(--hairline); font-size: var(--fs-sm); }
 .team-table th { text-align: left; padding: 10px var(--s-4); font-size: var(--fs-xs); font-weight: var(--fw-medium); color: var(--c-text-2); background: var(--c-bg); border-bottom: var(--hairline); }
 .team-table td { padding: 10px var(--s-4); border-bottom: var(--hairline); vertical-align: middle; transition: background-color 1200ms var(--ease); }

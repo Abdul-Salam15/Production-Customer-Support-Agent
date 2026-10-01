@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { logAudit } from "./auditLog.js";
 
 let transporter: Transporter | null = null;
 
@@ -28,6 +29,13 @@ export interface SendEmailArgs {
   text: string;
 }
 
+// "amara@lagosledger.example" -> "am***@lagosledger.example" — matches the
+// masking convention withLogging.ts already applies to tool_calls rows.
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return domain ? `${local.slice(0, 2)}***@${domain}` : email;
+}
+
 // Email is a best-effort side effect, never the source of truth — callers
 // must not let a send failure block the operation that triggered it (the
 // escalation/ticket row is already committed by the time this runs).
@@ -39,4 +47,5 @@ export async function sendEmail(args: SendEmailArgs): Promise<void> {
     subject: args.subject,
     text: args.text,
   });
+  void logAudit("email", `Email sent to ${maskEmail(args.to)} — "${args.subject}"`);
 }

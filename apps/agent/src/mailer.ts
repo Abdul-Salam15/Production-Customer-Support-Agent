@@ -1,5 +1,6 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { getEnv } from "./env.js";
+import { logAudit } from "./auditLog.js";
 
 let transporter: Transporter | null = null;
 
@@ -19,6 +20,11 @@ export interface SendEmailArgs {
   text: string;
 }
 
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return domain ? `${local.slice(0, 2)}***@${domain}` : email;
+}
+
 // Email is a best-effort side effect, never the source of truth — callers
 // must not let a send failure block whatever operation triggered it.
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
@@ -29,4 +35,5 @@ export async function sendEmail(args: SendEmailArgs): Promise<void> {
     subject: args.subject,
     text: args.text,
   });
+  void logAudit("email", `Email sent to ${maskEmail(args.to)} — "${args.subject}"`);
 }

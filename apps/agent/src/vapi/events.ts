@@ -3,6 +3,7 @@ import { Router as createRouter } from "express";
 import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { sendEmail } from "../mailer.js";
+import { logAudit } from "../auditLog.js";
 
 // Vapi's documented webhook contract: every server message arrives wrapped
 // as { message: { type, call: { id }, endedReason, ... } }. Verify against
@@ -118,6 +119,8 @@ async function handleEndOfCallReport(req: Request, res: Response): Promise<void>
       res.status(500).json({ error: "failed to finalize conversation" });
       return;
     }
+
+    void logAudit("call", `Call ended — ${summary}`);
 
     // Best-effort: the conversation is already finalized above, so a Gmail
     // hiccup here must not turn into a 500 for Vapi's webhook retry logic.

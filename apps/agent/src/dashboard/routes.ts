@@ -3,6 +3,7 @@ import { Router as createRouter } from "express";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { sendEmail } from "../mailer.js";
+import { logAudit } from "../auditLog.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -331,6 +332,9 @@ function registerCaseRoutes(router: Router): void {
         return;
       }
 
+      const claimer = getStaffUser(req);
+      void logAudit("case", `${claimer.fullName ?? claimer.email} claimed case ${req.params.reference}.`);
+
       res.status(200).json(await shapeCase(supabase, found.caseType, data));
     } catch (error) {
       console.error("dashboard: claim failed", error);
@@ -359,6 +363,9 @@ function registerCaseRoutes(router: Router): void {
         res.status(500).json({ error: "failed_to_unclaim" });
         return;
       }
+
+      const unclaimer = getStaffUser(req);
+      void logAudit("case", `${unclaimer.fullName ?? unclaimer.email} unclaimed case ${req.params.reference}.`);
 
       res.status(200).json(await shapeCase(supabase, found.caseType, data));
     } catch (error) {
@@ -397,6 +404,9 @@ function registerCaseRoutes(router: Router): void {
 
       await notifyCaseResolved(supabase, { ...found, row: data });
 
+      const resolver = getStaffUser(req);
+      void logAudit("case", `${resolver.fullName ?? resolver.email} marked case ${req.params.reference} resolved.`);
+
       res.status(200).json(await shapeCase(supabase, found.caseType, data));
     } catch (error) {
       console.error("dashboard: resolve failed", error);
@@ -427,6 +437,9 @@ function registerCaseRoutes(router: Router): void {
         res.status(500).json({ error: "failed_to_reopen" });
         return;
       }
+
+      const reopener = getStaffUser(req);
+      void logAudit("case", `${reopener.fullName ?? reopener.email} reopened case ${req.params.reference}.`);
 
       res.status(200).json(await shapeCase(supabase, found.caseType, data));
     } catch (error) {
@@ -461,6 +474,9 @@ function registerCaseRoutes(router: Router): void {
         res.status(500).json({ error: "failed_to_add_note" });
         return;
       }
+
+      const noteAuthor = getStaffUser(req);
+      void logAudit("case", `${noteAuthor.fullName ?? noteAuthor.email} added a note to case ${req.params.reference}.`);
 
       res.status(200).json(await shapeCase(supabase, found.caseType, found.row));
     } catch (error) {
@@ -595,6 +611,9 @@ function registerTeamRoutes(router: Router): void {
         return;
       }
 
+      const inviter = getStaffUser(req);
+      void logAudit("team", `${inviter.fullName ?? inviter.email} invited ${email.trim()} as ${role}.`);
+
       res.status(200).json({ invited: true });
     } catch (error) {
       console.error("dashboard: invite failed", error);
@@ -659,6 +678,11 @@ function registerTeamRoutes(router: Router): void {
         console.error("dashboard: role-change email failed", emailError);
       }
 
+      void logAudit(
+        "team",
+        `${staffUser.fullName ?? staffUser.email} changed ${target.full_name ?? target.email}'s role from ${target.role} to ${role}.`
+      );
+
       res.status(200).json({ profile: updated });
     } catch (error) {
       console.error("dashboard: role change failed", error);
@@ -671,7 +695,7 @@ function registerTeamRoutes(router: Router): void {
       const supabase = getSupabaseClient();
       const { data: target } = await supabase
         .from("profiles")
-        .select("id, role")
+        .select("id, email, full_name, role")
         .eq("id", req.params.userId)
         .maybeSingle();
 
@@ -707,6 +731,9 @@ function registerTeamRoutes(router: Router): void {
 
       await supabase.from("profiles").delete().eq("id", req.params.userId);
 
+      const remover = getStaffUser(req);
+      void logAudit("team", `${remover.fullName ?? remover.email} removed ${target.full_name ?? target.email} from the team.`);
+
       res.status(200).json({ removed: true });
     } catch (error) {
       console.error("dashboard: remove staff failed", error);
@@ -715,9 +742,42 @@ function registerTeamRoutes(router: Router): void {
   });
 }
 
+function registerAuditRoutes(router: Router): void {
+  // Fired once by the frontend right after a fresh sign-in (not on every
+  // session-restore page load) — the only way the backend finds out "someone
+  // logged in", since Supabase Auth itself is never told.
+  router.post("/api/dashboard/login-event", verifyStaffSession, (req: Request, res: Response) => {
+    const who = getStaffUser(req);
+    void logAudit("team", `${who.fullName ?? who.email} logged in.`);
+    res.status(200).json({ logged: true });
+  });
+
+  router.get("/api/dashboard/audit-log", verifyStaffSession, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("audit_log")
+        .select("id, category, message, created_at")
+        .order("created_at", { ascending: false })
+        .limit(200);
+
+      if (error) {
+        res.status(500).json({ error: "failed_to_load_audit_log" });
+        return;
+      }
+
+      res.status(200).json({ events: data ?? [] });
+    } catch (error) {
+      console.error("dashboard: failed to load audit log", error);
+      if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+    }
+  });
+}
+
 export function registerDashboardRoutes(router: Router): void {
   registerCaseRoutes(router);
   registerTeamRoutes(router);
+  registerAuditRoutes(router);
 }
 
 export function createDashboardRouter(): Router {

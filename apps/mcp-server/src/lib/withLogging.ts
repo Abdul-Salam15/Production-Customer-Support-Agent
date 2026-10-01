@@ -1,6 +1,7 @@
 import type { RequestHandlerExtra } from "@modelcontextprotocol/sdk/shared/protocol.js";
 import type { ServerNotification, ServerRequest } from "@modelcontextprotocol/sdk/types.js";
 import { getSupabaseClient } from "./supabaseClient.js";
+import { logAudit } from "./auditLog.js";
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 
@@ -74,6 +75,11 @@ export function withLogging<Args extends Record<string, unknown>>(
     } catch (logError) {
       console.error(`withLogging: failed to write tool_calls row for ${toolName}`, logError);
     }
+
+    // Plain-English line for the admin-facing Audit Logs tab — `purpose` is
+    // already written as a human-readable description (e.g. "Check payout
+    // status for the caller's question"), unlike `toolName`/`args`.
+    void logAudit("tool", status === "success" ? purpose : `${purpose} — failed`);
 
     return {
       content: [{ type: "text" as const, text: JSON.stringify(output) }],

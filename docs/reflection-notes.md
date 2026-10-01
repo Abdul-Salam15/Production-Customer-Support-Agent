@@ -173,3 +173,20 @@
   real staff login and caused a real mix-up (a real admin password typed into the fake
   customer login, which silently rejected it). One login system per concern now: `/login` ->
   `/api/whoami`-routed, `/signup` -> real `customer_accounts`.
+- Added an admin-only "Audit Logs" tab: a single append-only `audit_log` table (`message` is a
+  complete, pre-composed plain-English sentence written at the point each event happens, not
+  reconstructed from raw columns at read time — the audience is explicitly non-technical
+  admins). `logAudit()` (duplicated once per app, matching every other small lib in this
+  codebase) is called from: every MCP tool call (`withLogging.ts`, reusing the already
+  human-readable `purpose` string each tool registers itself with), every email send (inside
+  `sendEmail()` itself, so all five email scenarios get covered for free), escalation/ticket
+  creation, a call starting and ending, and every case/team action in the dashboard
+  (claim/unclaim/resolve/reopen/note/invite/role-change/remove). "User logged in" needed two
+  new tiny endpoints (`POST /api/dashboard/login-event`, `POST /api/customer/login-event`)
+  since Supabase Auth itself never tells the backend when someone signs in — the frontend calls
+  these once, right after a fresh `signInWithPassword` succeeds (explicitly not on every
+  session-restore page load, which would otherwise log a "logged in" line on every refresh).
+  The tab polls `GET /api/dashboard/audit-log` every 8s while open rather than using Realtime/
+  websockets — simplest thing that reads as "live" at this traffic scale. Migration
+  `0010_audit_log.sql` needs applying (after `0008`, which it depends on for `is_admin()`)
+  before this tab shows anything.
