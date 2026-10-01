@@ -22,9 +22,14 @@
     </div>
     <div class="site-header__nav">
       <a class="site-header__link" href="#how-this-works">How this works</a>
-      <div class="site-header__account">
+      <div class="site-header__account" data-account-out>
         <a class="site-header__auth-link" href="/login">Log in</a>
         <a class="site-header__auth-link" href="/signup">Sign up</a>
+      </div>
+      <div class="site-header__account site-header__account--in" data-account-in hidden>
+        <span class="site-header__who"><span class="site-header__name" data-account-name></span></span>
+        <a class="site-header__auth-link" data-account-home href="/customer">Call history</a>
+        <button class="site-header__auth-link site-header__auth-link--button" type="button" data-action="log-out">Log out</button>
       </div>
     </div>
   </div>
@@ -449,6 +454,8 @@
 </aside>
 
 <script src="app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="home-account.js"></script>
 <!-- Globe: isolated module. Page works fully without it. -->
 <script type="module" src="globe.js"></script>
 </body>
