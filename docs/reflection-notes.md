@@ -190,3 +190,21 @@
   websockets — simplest thing that reads as "live" at this traffic scale. Migration
   `0010_audit_log.sql` needs applying (after `0008`, which it depends on for `is_admin()`)
   before this tab shows anything.
+- Refined after seeing a reference design (a past project, "Casefile", with an equivalent
+  tool-call audit system): tool calls specifically got pulled out of the generic `audit_log`
+  feed into their own structured view, backed by the `tool_calls` table that already existed
+  (migration `0002`) and was already written to by every tool via `withLogging.ts` — no new
+  table needed, just a read policy (`0011_tool_calls_admin_read.sql`) and two new endpoints.
+  Casefile's design also logs *blocked* tool calls (denied by a `PreToolUse` allowlist hook
+  before they reach the tool), which doesn't have an equivalent here: our tools live in a
+  separate MCP server process reached over HTTP, not as in-process SDK tools gated by hooks,
+  so the model can only ever call one of the 8 tools that server actually registers — there's
+  no mechanism that would currently produce a "blocked" row, and building one (an agent-side
+  allowlist gate) was deliberately deferred as speculative scope until a real need shows up.
+  The per-case "Tool calls, live" panel (`GET /api/dashboard/cases/:reference/tool-calls`)
+  polls every 3s while a case is open and its underlying call hasn't ended, then stops itself
+  once the server reports `callEnded` or the case closes — for a short voice call, by the time
+  a specialist actually opens the case the call has usually already ended, so in practice this
+  often settles into "load once, stop" rather than truly live-updating; it's still built to
+  update in real time for the case where a specialist has the case open while the call is
+  still going.

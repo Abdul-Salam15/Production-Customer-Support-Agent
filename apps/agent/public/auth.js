@@ -105,7 +105,8 @@
         console.error('Failed to load team', e);
       });
     }
-    if (t === 'audit') { loadAuditLog(); startAuditPolling(); } else { stopAuditPolling(); }
+    if (t === 'audit') { refreshAuditTab(); startAuditPolling(); } else { stopAuditPolling(); }
+    if (t !== 'queue' && window.RelayQueue) window.RelayQueue.stopToolCallsPolling();
   }
 
   function signIn(profile, opts) {
@@ -604,11 +605,92 @@
   }
   function startAuditPolling() {
     stopAuditPolling();
-    auditTimer = setInterval(loadAuditLog, 8000);
+    auditTimer = setInterval(refreshAuditTab, 8000);
   }
   function stopAuditPolling() {
     if (auditTimer) { clearInterval(auditTimer); auditTimer = null; }
   }
+  function refreshAuditTab() {
+    loadAuditLog();
+    loadToolCallLog();
+  }
+
+  /* ---------- Tool calls (structured, filterable, CSV export) ---------- */
+  var TOOL_CALL_LOG = [];
+  var toolCallFilters = { tool: 'all', status: 'all' };
+
+  function populateToolFilterOptions() {
+    var select = $('[data-tool-filter]');
+    var tools = Array.prototype.slice.call(
+      new Set(TOOL_CALL_LOG.map(function (t) { return t.tool_name; }))
+    ).sort();
+    var current = select.value;
+    select.innerHTML = '<option value="all">All tools</option>' +
+      tools.map(function (name) { return '<option value="' + esc(name) + '">' + esc(name) + '</option>'; }).join('');
+    select.value = tools.indexOf(current) >= 0 ? current : 'all';
+  }
+
+  function filteredToolCalls() {
+    return TOOL_CALL_LOG.filter(function (t) {
+      if (toolCallFilters.tool !== 'all' && t.tool_name !== toolCallFilters.tool) return false;
+      if (toolCallFilters.status !== 'all' && t.status !== toolCallFilters.status) return false;
+      return true;
+    });
+  }
+
+  function toolCallTableRowHTML(t) {
+    var time = new Date(t.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return '<tr class="' + (t.status !== 'success' ? 'row-flagged' : '') + '">' +
+      '<td><span class="tool-call-table__tool">' + esc(t.tool_name) + '</span></td>' +
+      '<td>' + esc(t.purpose || '') +
+        (t.input_summary ? '<div class="tool-call-table__detail">' + esc(t.input_summary) + '</div>' : '') + '</td>' +
+      '<td>' + esc(t.result_summary || '') +
+        (t.error_message ? '<div class="tool-call-table__error">' + esc(t.error_message) + '</div>' : '') + '</td>' +
+      '<td><span class="tool-call-badge tool-call-badge--' + esc(t.status) + '">' + esc(t.status) + '</span></td>' +
+      '<td class="tool-call-table__time">' + time + '</td>' +
+    '</tr>';
+  }
+
+  function renderToolCallTable() {
+    var body = $('[data-tool-call-body]'), empty = $('[data-tool-call-empty]');
+    var rows = filteredToolCalls().slice().reverse();
+    if (!rows.length) { body.innerHTML = ''; empty.hidden = false; return; }
+    empty.hidden = true;
+    body.innerHTML = rows.map(toolCallTableRowHTML).join('');
+  }
+
+  async function loadToolCallLog() {
+    try {
+      var data = await api('/api/dashboard/tool-calls');
+      TOOL_CALL_LOG = data.toolCalls;
+      populateToolFilterOptions();
+      renderToolCallTable();
+    } catch (e) {
+      console.error('Failed to load tool call log', e);
+    }
+  }
+
+  $('[data-tool-filter]').addEventListener('change', function (e) { toolCallFilters.tool = e.target.value; renderToolCallTable(); });
+  $('[data-tool-status-filter]').addEventListener('change', function (e) { toolCallFilters.status = e.target.value; renderToolCallTable(); });
+
+  function csvField(v) {
+    var s = v == null ? '' : String(v);
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  $('[data-act="export-tool-calls-csv"]').addEventListener('click', function (e) {
+    e.preventDefault();
+    var header = ['Tool', 'Purpose', 'Input Summary', 'Result Summary', 'Status', 'Error Message', 'Time'];
+    var rows = filteredToolCalls().map(function (t) {
+      return [t.tool_name, t.purpose, t.input_summary, t.result_summary, t.status, t.error_message, t.created_at];
+    });
+    var csv = [header].concat(rows).map(function (row) { return row.map(csvField).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'tool-calls.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
 
   /* ---------- Navigation ---------- */
   $$('[data-tab]').forEach(function (b) {

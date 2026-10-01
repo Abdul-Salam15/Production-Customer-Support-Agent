@@ -6,6 +6,9 @@
 
   var CURRENT_USER = null;
   var CASES = [];
+  var TOOL_CALLS = [];
+  var toolCallsTimer = null;
+  var toolCallsFor = null;
 
   /* ---------- Helpers ---------- */
   var $ = function (s, r) { return (r || document).querySelector(s); };
@@ -161,6 +164,28 @@
       '<button class="btn btn--success action-resolve" type="button" data-act="resolve">Mark resolved</button>';
   }
 
+  function fmtToolCallTime(iso) {
+    return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  function toolCallRowHTML(t) {
+    return '<li class="tool-call tool-call--' + (t.status === 'error' ? 'bad' : 'ok') + '">' +
+      '<span class="tool-call__time tabular">' + fmtToolCallTime(t.created_at) + '</span>' +
+      '<span class="tool-call__line"><span class="tool-call__name">' + esc(t.tool_name) + '</span> — ' + esc(t.purpose || '') + '</span>' +
+    '</li>';
+  }
+  function toolCallsPanelHTML() {
+    var list = TOOL_CALLS.slice().reverse();
+    return '<section class="tool-calls-live" aria-live="polite">' +
+      '<div class="tool-calls-live__head">' +
+        '<h2 class="tool-calls-live__title">Tool calls, live</h2>' +
+        '<span class="tool-calls-live__count tabular">' + TOOL_CALLS.length + ' call' + (TOOL_CALLS.length === 1 ? '' : 's') + '</span>' +
+      '</div>' +
+      (list.length
+        ? '<ol class="tool-calls-live__list">' + list.map(toolCallRowHTML).join('') + '</ol>'
+        : '<p class="tool-calls-live__empty">No tool calls yet for this call.</p>') +
+    '</section>';
+  }
+
   function renderDetail() {
     var pane = $('[data-detail]');
     var c = ui.selected && find(ui.selected);
@@ -208,6 +233,7 @@
               '<div class="info-grid__item info-grid__item--linked"><dt>Transaction or payout</dt><dd>' + linkedHTML(c.linkedTransactionOrPayout) + '</dd></div>' +
             '</dl>' +
           '</section>' +
+          (c.reference === toolCallsFor ? toolCallsPanelHTML() : '') +
           '<section class="detail-section"><h2 class="detail-section__title">Full transcript <span class="case-transcript__meta tabular">· ' + transcript.length + ' entries' + (transcript.length ? ' · ' + fmtClock(transcript[transcript.length - 1].at) : '') + '</span></h2>' +
             (transcript.length
               ? '<ol class="case-transcript" tabindex="0" aria-label="Full call transcript">' + transcript.map(transcriptItemHTML).join('') + '</ol>'
@@ -276,12 +302,49 @@
     });
   }
 
+  /* ---------- Tool calls, live (case detail pane) ---------- */
+  function stopToolCallsPolling() {
+    if (toolCallsTimer) { clearInterval(toolCallsTimer); toolCallsTimer = null; }
+    toolCallsFor = null;
+  }
+
+  async function fetchToolCalls(reference) {
+    try {
+      var data = await window.RelayAuth.api('/api/dashboard/cases/' + encodeURIComponent(reference) + '/tool-calls');
+      TOOL_CALLS = data.toolCalls;
+      if (ui.selected === reference) renderDetail();
+      return data.callEnded;
+    } catch (e) {
+      console.error('Failed to load tool calls', e);
+      return true;
+    }
+  }
+
+  // "Live" only matters while the case is still open and the underlying
+  // call hasn't ended — once either is true, one more fetch keeps the panel
+  // accurate but there's nothing left to poll for.
+  async function watchToolCalls(reference) {
+    stopToolCallsPolling();
+    var c = find(reference);
+    if (!c) return;
+    toolCallsFor = reference;
+    var callEnded = await fetchToolCalls(reference);
+    if (c.status === 'closed' || callEnded) return;
+    toolCallsTimer = setInterval(async function () {
+      if (toolCallsFor !== reference) return;
+      var ended = await fetchToolCalls(reference);
+      var current = find(reference);
+      if (ended || !current || current.status === 'closed') stopToolCallsPolling();
+    }, 3000);
+  }
+
   /* ---------- Events ---------- */
   $('[data-queue]').addEventListener('click', function (e) {
     var row = e.target.closest('.case-row');
     if (!row) return;
     ui.selected = row.dataset.ref; ui.noteOpen = false;
     render();
+    watchToolCalls(ui.selected);
     var btn = $('.case-row[data-ref="' + ui.selected + '"]'); if (btn) btn.focus({ preventScroll: true });
   });
 
@@ -349,6 +412,7 @@
   window.RelayQueue = {
     cases: CASES, render: render, reload: reload,
     setCurrentUser: function (n) { CURRENT_USER = n; render(); },
-    claim: claim, unclaim: unclaim, reopen: reopen, addNote: addNote, resolve: resolve
+    claim: claim, unclaim: unclaim, reopen: reopen, addNote: addNote, resolve: resolve,
+    stopToolCallsPolling: stopToolCallsPolling
   };
 })();

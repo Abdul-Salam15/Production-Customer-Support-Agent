@@ -752,6 +752,71 @@ function registerAuditRoutes(router: Router): void {
     res.status(200).json({ logged: true });
   });
 
+  // Any signed-in staff member can see a case's own tool-call history (not
+  // admin-only like the full audit log) — it's the same thing a specialist
+  // already sees in that case's transcript, just the machine side of it.
+  // Polled by the case detail pane's "Tool calls, live" panel while the
+  // case is open; `callEnded` lets the frontend know when to stop polling.
+  router.get("/api/dashboard/cases/:reference/tool-calls", verifyStaffSession, async (req: Request, res: Response) => {
+    try {
+      const supabase = getSupabaseClient();
+      const found = await findCase(supabase, req.params.reference);
+      if (!found) {
+        res.status(404).json({ error: "case_not_found" });
+        return;
+      }
+
+      if (!found.row.conversation_id) {
+        res.status(200).json({ toolCalls: [], callEnded: true });
+        return;
+      }
+
+      const [{ data: toolCalls, error }, { data: conversation }] = await Promise.all([
+        supabase
+          .from("tool_calls")
+          .select("id, tool_name, purpose, input_summary, result_summary, status, error_message, duration_ms, created_at")
+          .eq("conversation_id", found.row.conversation_id)
+          .order("created_at", { ascending: true }),
+        supabase.from("conversations").select("ended_at").eq("conversation_id", found.row.conversation_id).maybeSingle(),
+      ]);
+
+      if (error) {
+        res.status(500).json({ error: "failed_to_load_tool_calls" });
+        return;
+      }
+
+      res.status(200).json({ toolCalls: toolCalls ?? [], callEnded: !!conversation?.ended_at });
+    } catch (error) {
+      console.error("dashboard: failed to load case tool calls", error);
+      if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // Full historical tool-call log — admin-only, structured (vs. the plain-
+  // English /audit-log feed below), for the Audit Logs tab's "Tool Calls"
+  // table: filterable by tool/status, with input/output detail and CSV
+  // export.
+  router.get("/api/dashboard/tool-calls", verifyStaffSession, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("tool_calls")
+        .select("id, conversation_id, tool_name, purpose, input_summary, result_summary, status, error_message, duration_ms, created_at")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (error) {
+        res.status(500).json({ error: "failed_to_load_tool_calls" });
+        return;
+      }
+
+      res.status(200).json({ toolCalls: data ?? [] });
+    } catch (error) {
+      console.error("dashboard: failed to load tool calls", error);
+      if (!res.headersSent) res.status(500).json({ error: "internal_error" });
+    }
+  });
+
   router.get("/api/dashboard/audit-log", verifyStaffSession, requireAdmin, async (_req: Request, res: Response) => {
     try {
       const supabase = getSupabaseClient();

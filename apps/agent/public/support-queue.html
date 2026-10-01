@@ -177,6 +177,30 @@
     <p class="audit__text">A plain-English record of what's happening across the system — calls, tool lookups, cases, emails, team changes and logins. Updates automatically.</p>
     <ol class="audit-list" data-audit-list></ol>
     <p class="audit__empty" data-audit-empty hidden>Nothing logged yet.</p>
+
+    <div class="audit__subhead">
+      <h2 class="audit__subtitle">Tool Calls</h2>
+      <div class="audit__filters">
+        <label class="sr-only" for="tool-call-filter">Filter by tool</label>
+        <select class="category-select" id="tool-call-filter" data-tool-filter>
+          <option value="all">All tools</option>
+        </select>
+        <label class="sr-only" for="tool-call-status-filter">Filter by status</label>
+        <select class="category-select" id="tool-call-status-filter" data-tool-status-filter>
+          <option value="all">All statuses</option>
+          <option value="success">Success</option>
+          <option value="error">Error</option>
+        </select>
+        <a class="link-quiet" href="#" data-act="export-tool-calls-csv">Export CSV</a>
+      </div>
+    </div>
+    <table class="tool-call-table">
+      <thead>
+        <tr><th scope="col">Tool</th><th scope="col">Purpose and input</th><th scope="col">Result</th><th scope="col">Status</th><th scope="col">Time</th></tr>
+      </thead>
+      <tbody data-tool-call-body></tbody>
+    </table>
+    <p class="audit__empty" data-tool-call-empty hidden>No tool calls recorded yet.</p>
   </div>
 </section>
 </div>
