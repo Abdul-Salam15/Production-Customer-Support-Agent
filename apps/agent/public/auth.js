@@ -106,6 +106,11 @@
     $$('[data-current-user]').forEach(function (el) { el.textContent = ui.user.name || ui.user.email; });
     if (window.RelayQueue) window.RelayQueue.setCurrentUser(ui.user.name || ui.user.email);
     $('[data-tab="team"]').hidden = ui.user.role !== 'admin';
+    // Universal login (/login, /admin or /specialist all show the same form)
+    // lands on the role-specific URL once signed in, regardless of which one
+    // was used to get here.
+    var targetPath = '/' + ui.user.role;
+    if (location.pathname !== targetPath) history.replaceState(null, '', targetPath);
     show('app'); setTab('queue');
     if (window.RelayQueue) window.RelayQueue.reload();
     if (opts.welcome) showWelcome(ui.user.name || ui.user.email);
@@ -113,7 +118,9 @@
 
   async function signOut() {
     try { await supabaseClient.auth.signOut(); } catch (e) { /* ignore */ }
-    ui.user = null; closeInvite(true); closeRole(true); closeRemove(true); resetAuthForms(); show('login');
+    ui.user = null; closeInvite(true); closeRole(true); closeRemove(true); resetAuthForms();
+    if (location.pathname !== '/login') history.replaceState(null, '', '/login');
+    show('login');
   }
 
   var welcomeTimers = [];

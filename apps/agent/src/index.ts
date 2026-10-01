@@ -43,10 +43,11 @@ app.get("/health", (_req, res) => {
   res.status(200).type("text/plain").send("ok");
 });
 
-// Clean aliases for the staff dashboard — the same page for both, since the
-// page itself already gates admin-only UI/endpoints by the logged-in
-// profile's role, not by which URL was used to reach it.
-app.get(["/admin", "/specialist"], (_req, res) => {
+// One staff dashboard page behind three paths. /login is the universal,
+// role-agnostic entry point; auth.js redirects the browser to /admin or
+// /specialist right after a successful sign-in, based on the logged-in
+// profile's role — not whichever of these paths was used to arrive here.
+app.get(["/login", "/admin", "/specialist"], (_req, res) => {
   res.sendFile(join(__dirname, "..", "public", "support-queue.html"));
 });
 
