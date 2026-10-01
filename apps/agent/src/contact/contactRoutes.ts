@@ -14,6 +14,9 @@ function maskEmail(email: string): string {
 interface ContactSubmissionBody {
   name?: unknown;
   email?: unknown;
+  // Verified caller keeping their on-file email: the browser only has it
+  // masked, so the server resolves the real address from the account.
+  useAccountEmail?: unknown;
   callbackTime?: unknown;
 }
 
@@ -25,7 +28,8 @@ async function handleContactSubmission(req: Request, res: Response): Promise<voi
       res.status(400).json({ error: "name is required" });
       return;
     }
-    if (typeof body.email !== "string" || !EMAIL_RE.test(body.email.trim())) {
+    const useAccountEmail = body.useAccountEmail === true;
+    if (!useAccountEmail && (typeof body.email !== "string" || !EMAIL_RE.test(body.email.trim()))) {
       res.status(400).json({ error: "a valid email is required" });
       return;
     }
@@ -35,19 +39,32 @@ async function handleContactSubmission(req: Request, res: Response): Promise<voi
     }
 
     const name = body.name.trim();
-    const email = body.email.trim();
     const callbackTime = typeof body.callbackTime === "string" ? body.callbackTime.trim() || null : null;
 
     const supabase = getSupabaseClient();
     const { data: conversation } = await supabase
       .from("conversations")
-      .select("conversation_id")
+      .select("conversation_id, customer_id")
       .eq("vapi_call_id", callId)
       .maybeSingle();
 
     if (!conversation) {
       res.status(404).json({ error: "no conversation found for this call" });
       return;
+    }
+
+    let email: string;
+    if (useAccountEmail) {
+      const { data: customer } = conversation.customer_id
+        ? await supabase.from("customers").select("contact_email").eq("customer_id", conversation.customer_id).maybeSingle()
+        : { data: null };
+      if (!customer?.contact_email) {
+        res.status(400).json({ error: "this call has no verified account email" });
+        return;
+      }
+      email = customer.contact_email;
+    } else {
+      email = (body.email as string).trim();
     }
 
     const { error } = await supabase.from("contact_submissions").upsert({

@@ -179,7 +179,7 @@
                 <!-- Verified-caller variant -->
                 <div class="contact-form__on-file" data-email-on-file hidden>
                   <p class="field__label">Email</p>
-                  <p class="contact-form__on-file-text">We'll contact you at the email on file for LagosLedger: <span class="contact-form__masked">am***@lagosledger.example</span></p>
+                  <p class="contact-form__on-file-text">We'll contact you at the email on file<span data-on-file-company></span>: <span class="contact-form__masked" data-on-file-email></span></p>
                   <button class="btn btn--text contact-form__change" type="button" data-action="use-different-email">Use a different email</button>
                 </div>
 
@@ -255,10 +255,10 @@
                   <span class="outcome-card__type">Specialist callback arranged</span>
                   <span class="outcome-card__ref tabular" data-callback-ref></span>
                 </div>
-                <dl class="outcome-card__details">
-                  <dt>Name</dt><dd data-callback-name>Amara Okafor</dd>
-                  <dt>Email</dt><dd data-callback-email>am***@lagosledger.example</dd>
-                  <dt>Callback time</dt><dd class="tabular" data-callback-time>Mon 28 Sep, 10:00 WAT</dd>
+                <dl class="outcome-card__details" data-callback-details hidden>
+                  <dt>Name</dt><dd data-callback-name></dd>
+                  <dt>Email</dt><dd data-callback-email></dd>
+                  <dt>Callback time</dt><dd class="tabular" data-callback-time></dd>
                 </dl>
                 <p class="outcome-card__foot">A RelayPay specialist will contact you.</p>
               </div>

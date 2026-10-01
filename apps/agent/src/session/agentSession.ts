@@ -26,6 +26,10 @@ const REAP_INTERVAL_MS = 30 * 1000;
 // Pre-warming is an optimisation, so it is capped; a turn always gets a
 // session regardless of this limit.
 const MAX_WARM_SESSIONS = 2;
+// Closing an idle session is cheap to undo (the next turn starts a new one),
+// but finalizing a call is not — so a call is only finalized as abandoned
+// once it has also stayed quiet this much longer with no new session.
+const FINALIZE_AFTER_CLOSE_MS = 12 * 60 * 1000;
 
 class InputQueue implements AsyncIterable<SDKUserMessage> {
   private pending: SDKUserMessage[] = [];
@@ -315,12 +319,17 @@ const reaper = setInterval(() => {
   const now = Date.now();
   for (const agent of liveAgents.values()) {
     if (agent.isIdle && now - agent.lastActivity > IDLE_CLOSE_MS) {
-      closeCallAgent(agent.callId);
-      // A session idle this long means the call is over; finalize it in case
-      // neither Vapi's end-of-call-report nor the browser's call-end arrived.
-      finalizeCall(agent.callId, "idle-timeout").catch((error) => {
-        console.error(`agentSession: idle finalize failed for call ${agent.callId}`, error);
-      });
+      const callId = agent.callId;
+      closeCallAgent(callId);
+      // Backstop for when Vapi's end-of-call webhooks never arrive. Skipped if
+      // the caller spoke again (a new session exists); finalizeCall itself is
+      // a no-op if a webhook already finalized the call.
+      setTimeout(() => {
+        if (agents.has(callId)) return;
+        finalizeCall(callId, "idle-timeout").catch((error) => {
+          console.error(`agentSession: idle finalize failed for call ${callId}`, error);
+        });
+      }, FINALIZE_AFTER_CLOSE_MS).unref();
     }
   }
 }, REAP_INTERVAL_MS);

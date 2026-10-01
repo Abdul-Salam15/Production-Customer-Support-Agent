@@ -241,6 +241,30 @@ function buildOutcomeEvent(
   }
 }
 
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return domain ? `${local.slice(0, 2)}***@${domain}` : email;
+}
+
+// The contact form's verified-caller variant shows "We'll contact you at the
+// email on file: am***@...". lookup_customer deliberately doesn't return the
+// email to the model, so it's fetched here and only ever sent masked.
+async function withMaskedAccountEmail(event: CallEvent, customerId: unknown): Promise<CallEvent> {
+  if (typeof customerId !== "string" || event.type !== "outcome" || !event.card) return event;
+  try {
+    const { data } = await getSupabaseClient()
+      .from("customers")
+      .select("contact_email")
+      .eq("customer_id", customerId)
+      .maybeSingle();
+    if (!data?.contact_email) return event;
+    return { ...event, card: { ...event.card, data: { ...event.card.data, masked_email: maskEmail(data.contact_email) } } };
+  } catch (error) {
+    console.error("customLlm: failed to load account email for the contact form", error);
+    return event;
+  }
+}
+
 interface ToolUseBlock {
   type: "tool_use";
   id: string;
@@ -361,7 +385,14 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
               if (!toolName) continue;
               const parsed = tryParseToolResult(toolResult.content);
               const outcomeEvent = buildOutcomeEvent(toolName, parsed, guardContext.isVerified);
-              if (outcomeEvent) publishCallEvent(callId, outcomeEvent);
+              if (outcomeEvent?.type === "outcome" && outcomeEvent.card?.kind === "account_verified") {
+                // Not awaited: the extra lookup must not hold up the spoken reply.
+                void withMaskedAccountEmail(outcomeEvent, parsed?.customer_id).then((event) =>
+                  publishCallEvent(callId, event)
+                );
+              } else if (outcomeEvent) {
+                publishCallEvent(callId, outcomeEvent);
+              }
             }
           }
         } else if (message.type === "result") {

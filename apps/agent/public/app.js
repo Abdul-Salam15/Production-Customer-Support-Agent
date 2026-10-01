@@ -195,6 +195,17 @@
     }
   }
 
+  // Only what the caller typed into the form this call — a voice-only
+  // escalation has no form data, so the details list stays hidden rather
+  // than showing a previous call's (or the demo's) name and email.
+  function setCallbackContact(c) {
+    var src = $('[data-outcomes-source]');
+    $('[data-callback-name]', src).textContent = c.name || '';
+    $('[data-callback-email]', src).textContent = c.email || '';
+    $('[data-callback-time]', src).textContent = c.when || '';
+    $('[data-callback-details]', src).hidden = !c.name;
+  }
+
   function setOutcome(key, on) {
     state.outcomes[key] = !!on;
     var card = $('[data-outcomes-source] [data-outcome="' + key + '"]');
@@ -352,7 +363,15 @@
   var cfDate = $('#cf-date');
   var cfOnSubmitted = null;
   var cfTouched = {};
-  var ON_FILE_EMAIL = 'am***@lagosledger.example';
+  // The verified caller's masked account email, from the account_verified
+  // outcome event on a real call (sample values for the demo/review states).
+  var ON_FILE_EMAIL = '';
+  function setOnFile(company, maskedEmail) {
+    ON_FILE_EMAIL = maskedEmail || '';
+    $('[data-on-file-company]', cf).textContent = company ? ' for ' + company : '';
+    $('[data-on-file-email]', cf).textContent = ON_FILE_EMAIL;
+  }
+  setOnFile('LagosLedger', 'am***@lagosledger.example');
   var cfVerified = false, cfUseOther = false;
   var collapseTimer = null;
 
@@ -472,9 +491,7 @@
   }
 
   function submitContactForm(data) {
-    $('[data-callback-name]').textContent = data.name;
-    $('[data-callback-email]').textContent = data.email;
-    $('[data-callback-time]').textContent = data.when;
+    setCallbackContact(data);
     cfForm.hidden = true; cfDone.hidden = false;
     cf.classList.add('contact-form--submitted');
     announce('Details received.');
@@ -505,17 +522,21 @@
       tz: cfTz.value,
       notes: $('#cf-notes').value.trim()
     };
-    if (!activeCallId || usingOwnFileEmail) {
-      // No real call to POST against, or the caller is using their verified
-      // account's own email — create_escalation already defaults to that
-      // account's contact_email without needing a stored submission.
+    if (!activeCallId) {
+      // Demo/review only — no real call to POST against.
       submitContactForm(payload);
       return;
     }
+    // Always POSTed, even when keeping the on-file email: the submission is
+    // what tells the model to create the escalation, and the server fills in
+    // the real account email itself (the browser only ever has it masked).
+    var body = usingOwnFileEmail
+      ? { name: payload.name, useAccountEmail: true, callbackTime: payload.when }
+      : { name: payload.name, email: rawEmail, callbackTime: payload.when };
     fetch('/api/calls/' + activeCallId + '/contact', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: payload.name, email: rawEmail, callbackTime: payload.when })
+      body: JSON.stringify(body)
     }).then(function (r) {
       // The server queued a note for the model once the submission was
       // stored; this message makes it reply now (creating the escalation
@@ -616,6 +637,7 @@
     setCardDetails('verified', { company: 'LagosLedger' });
     setCardDetails('ticket', { ref: 'RP-4821', summary: 'Payout TXN-9001 to a supplier in Nairobi delayed beyond two business days.' });
     setCardDetails('callback', { ref: 'RP-4822' });
+    setCallbackContact({ name: 'Amara Okafor', email: 'am***@lagosledger.example', when: 'Mon 28 Sep, 10:00 WAT' });
     setStatusCards(STATUS_SAMPLES.live.cards);
     setCaption('you', ''); setCaption('agent', '');
     hideContactForm();
@@ -697,6 +719,7 @@
         var d = card.data || {};
         if (card.kind === 'account_verified') {
           setCardDetails('verified', { company: d.company_name });
+          setOnFile(d.company_name, d.masked_email);
           setOutcome('verified', true);
         } else if (card.kind === 'ticket_created') {
           setCardDetails('ticket', { ref: d.ticket_id });
@@ -715,7 +738,8 @@
           }
         }
       } else if (evt.type === 'contact_form_requested') {
-        showContactForm(state.outcomes.verified ? 'verified' : 'standard');
+        // Without a known on-file email, ask for one rather than show a blank.
+        showContactForm(state.outcomes.verified && ON_FILE_EMAIL ? 'verified' : 'standard');
       }
       // contact_details_received is informational only — the confirmation
       // UI already appears locally from submitContactForm on this same
@@ -751,6 +775,8 @@
     state.seconds = 0; state.transcript = []; setMuted(false);
     ['verified', 'status', 'ticket', 'callback'].forEach(function (k) { setOutcome(k, false); });
     ['verified', 'ticket', 'callback'].forEach(function (k) { setCardDetails(k, {}); });
+    setOnFile('', '');
+    setCallbackContact({});
     realStatusCards = [];
     setStatusCards([]);
     setCaption('you', ''); setCaption('agent', '');
