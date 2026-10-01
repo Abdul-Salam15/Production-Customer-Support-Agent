@@ -155,6 +155,27 @@ async function resolveContactDetails(
   return { userName: args.user_name, userEmail: args.user_email };
 }
 
+// The model sometimes fills ticket_id / customer_id with values it made up
+// (a reference it invented, a caller's name). Both columns are foreign keys,
+// so a made-up value failed the insert — the case never reached the queue
+// while the model read the invented reference aloud as if it were real. Only
+// a ticket actually created on this call, and only the customer verified on
+// this call, are trusted.
+async function resolveLinkedTicketId(
+  supabase: SupabaseClient,
+  ticketId: string | undefined,
+  conversationId: string | null
+): Promise<string | null> {
+  if (!ticketId || !conversationId) return null;
+  const { data } = await supabase
+    .from("support_tickets")
+    .select("ticket_id")
+    .eq("ticket_id", ticketId)
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+  return data?.ticket_id ?? null;
+}
+
 async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
   const supabase = getSupabaseClient();
   const conversationId = ctx.conversationId ?? args.conversation_id ?? null;
@@ -170,15 +191,21 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
 
   const priority = CATEGORY_PRIORITY[args.category];
 
-  const escalationId = args.ticket_id
-    ? args.ticket_id
-    : await generateUniqueReference((candidate) => escalationIdExists(supabase, candidate));
+  const [ticketId, customerId] = await Promise.all([
+    resolveLinkedTicketId(supabase, args.ticket_id, conversationId),
+    getVerifiedCustomerId(supabase, conversationId),
+  ]);
+
+  const escalationId =
+    ticketId && !(await escalationIdExists(supabase, ticketId))
+      ? ticketId
+      : await generateUniqueReference((candidate) => escalationIdExists(supabase, candidate));
 
   const { error } = await supabase.from("escalations").insert({
     escalation_id: escalationId,
-    ticket_id: args.ticket_id ?? null,
+    ticket_id: ticketId,
     conversation_id: conversationId,
-    customer_id: args.customer_id ?? null,
+    customer_id: customerId,
     user_name: userName,
     user_email: userEmail,
     category: args.category,
@@ -217,7 +244,10 @@ export function registerCreateEscalation(server: McpServer): void {
     "create_escalation",
     {
       title: "Create Escalation",
-      description: "Escalate a request that requires human support. Priority is derived from category, not model-chosen.",
+      description:
+        "Escalate a request that requires human support. Priority is derived from category, not model-chosen. " +
+        "Only pass ticket_id if create_support_ticket returned it on this call; never invent one. " +
+        "The returned escalation_id is the caller's only valid reference — read exactly that, or none if this call fails.",
       inputSchema: inputShape,
     },
     withLogging("create_escalation", "Escalate a request that requires human support", handle)

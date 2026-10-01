@@ -184,7 +184,7 @@
                 </div>
 
                 <div class="field" data-field="email">
-                  <label class="field__label" for="cf-email">Work email</label>
+                  <label class="field__label" for="cf-email">Preferred email</label>
                   <input class="field__input" id="cf-email" name="email" type="email" autocomplete="email" inputmode="email" aria-describedby="cf-email-error" required>
                   <p class="field__error" id="cf-email-error" hidden></p>
                 </div>
@@ -238,22 +238,22 @@
             <div class="outcomes outcomes--live" data-outcomes-source>
               <div class="outcome-card outcome-card--verified" data-outcome="verified">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
-                <p class="outcome-card__summary">Verified: LagosLedger</p>
+                <p class="outcome-card__summary">Verified<span data-verified-company></span></p>
               </div>
               <!-- G4. Transaction / payout status (rendered by app.js from STATUS_CARDS; always above the callback card) -->
               <div class="outcome-group" data-outcome="status" data-status-cards></div>
               <div class="outcome-card outcome-card--ticket" data-outcome="ticket">
                 <div class="outcome-card__head">
                   <span class="outcome-card__type">Support ticket created</span>
-                  <span class="outcome-card__ref tabular">RP-4821</span>
+                  <span class="outcome-card__ref tabular" data-ticket-ref></span>
                 </div>
-                <p class="outcome-card__summary">Payout TXN-9001 to a supplier in Nairobi delayed beyond two business days.</p>
+                <p class="outcome-card__summary" data-ticket-summary hidden></p>
                 <p class="outcome-card__foot">Our support team will follow up.</p>
               </div>
               <div class="outcome-card outcome-card--callback" data-outcome="callback">
                 <div class="outcome-card__head">
                   <span class="outcome-card__type">Specialist callback arranged</span>
-                  <span class="outcome-card__ref tabular">RP-4822</span>
+                  <span class="outcome-card__ref tabular" data-callback-ref></span>
                 </div>
                 <dl class="outcome-card__details">
                   <dt>Name</dt><dd data-callback-name>Amara Okafor</dd>

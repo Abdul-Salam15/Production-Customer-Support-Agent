@@ -4,6 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
 import { logAudit } from "../lib/auditLog.js";
+import { getVerifiedCustomerId } from "../lib/verification.js";
 
 const inputShape = {
   customer_id: z.string().optional(),
@@ -70,7 +71,9 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
   const { error } = await supabase.from("support_tickets").insert({
     ticket_id: ticketId,
     conversation_id: conversationId,
-    customer_id: args.customer_id ?? null,
+    // Only the customer verified on this call — a model-supplied id that
+    // isn't a real customers row would fail the foreign key and lose the ticket.
+    customer_id: await getVerifiedCustomerId(supabase, conversationId),
     category: args.category,
     priority: args.priority,
     summary: args.summary,

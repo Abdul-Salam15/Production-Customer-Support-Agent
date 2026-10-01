@@ -178,6 +178,23 @@
     $('[data-activity-text]').textContent = ACTIVITIES[key];
   }
 
+  // Cards start with no reference: only a reference a tool actually
+  // returned (via the outcome events below) is ever shown, never a
+  // placeholder the caller might mistake for their real case number.
+  function setCardDetails(key, details) {
+    var src = $('[data-outcomes-source]');
+    if (key === 'callback') {
+      $('[data-callback-ref]', src).textContent = details.ref || '';
+    } else if (key === 'ticket') {
+      $('[data-ticket-ref]', src).textContent = details.ref || '';
+      var summary = $('[data-ticket-summary]', src);
+      summary.textContent = details.summary || '';
+      summary.hidden = !details.summary;
+    } else if (key === 'verified') {
+      $('[data-verified-company]', src).textContent = details.company ? ': ' + details.company : '';
+    }
+  }
+
   function setOutcome(key, on) {
     state.outcomes[key] = !!on;
     var card = $('[data-outcomes-source] [data-outcome="' + key + '"]');
@@ -365,7 +382,7 @@
     email: function () {
       if (cfVerified && !cfUseOther) return '';
       var v = $('#cf-email').value.trim();
-      if (!v) return 'Enter your work email';
+      if (!v) return 'Enter your preferred email';
       return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) ? '' : 'Enter a valid email address';
     },
     when: function () {
@@ -596,6 +613,9 @@
     }
     state.seconds = 0; state.transcript = []; setMuted(false);
     ['verified', 'status', 'ticket', 'callback'].forEach(function (k) { setOutcome(k, false); });
+    setCardDetails('verified', { company: 'LagosLedger' });
+    setCardDetails('ticket', { ref: 'RP-4821', summary: 'Payout TXN-9001 to a supplier in Nairobi delayed beyond two business days.' });
+    setCardDetails('callback', { ref: 'RP-4822' });
     setStatusCards(STATUS_SAMPLES.live.cards);
     setCaption('you', ''); setCaption('agent', '');
     hideContactForm();
@@ -674,9 +694,17 @@
         setLiveMode('thinking');
       } else if (evt.type === 'outcome') {
         var card = evt.card || {};
-        if (card.kind === 'account_verified') setOutcome('verified', true);
-        else if (card.kind === 'ticket_created') setOutcome('ticket', true);
-        else if (card.kind === 'escalation_created') setOutcome('callback', true);
+        var d = card.data || {};
+        if (card.kind === 'account_verified') {
+          setCardDetails('verified', { company: d.company_name });
+          setOutcome('verified', true);
+        } else if (card.kind === 'ticket_created') {
+          setCardDetails('ticket', { ref: d.ticket_id });
+          setOutcome('ticket', true);
+        } else if (card.kind === 'escalation_created') {
+          setCardDetails('callback', { ref: d.escalation_id });
+          setOutcome('callback', true);
+        }
         else if (card.kind === 'transaction_status' || card.kind === 'payout_status') {
           var sc = statusCardFromOutcome(card.kind, card.data || {});
           if (sc) {
@@ -722,6 +750,7 @@
     }
     state.seconds = 0; state.transcript = []; setMuted(false);
     ['verified', 'status', 'ticket', 'callback'].forEach(function (k) { setOutcome(k, false); });
+    ['verified', 'ticket', 'callback'].forEach(function (k) { setCardDetails(k, {}); });
     realStatusCards = [];
     setStatusCards([]);
     setCaption('you', ''); setCaption('agent', '');
