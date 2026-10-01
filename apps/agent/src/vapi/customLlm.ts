@@ -272,7 +272,9 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   // Usually already started by the "in-progress" status-update webhook, so
   // this resolves immediately instead of paying for SDK startup here.
   const agent = await getOrCreateCallAgent(callId);
-  const prompt = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
+  const utterance = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
+  const notes = agent.takeNotes();
+  const prompt = notes.length > 0 ? `${notes.join("\n")}\n\n${utterance}` : utterance;
 
   const conversationId = agent.conversationId;
   const guardContext = await buildGuardContext(conversationId, userMessage.content);

@@ -16,6 +16,7 @@ import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { buildSystemPrompt } from "../systemPrompt.js";
 import { logAudit } from "../auditLog.js";
+import { finalizeCall } from "./finalizeCall.js";
 
 // Each SDK process holds roughly 250 MB, so sessions are closed once a call
 // goes quiet rather than relying on a call-ended webhook that may not be
@@ -130,6 +131,9 @@ export class CallAgent {
   // Messages actually sent to the SDK, including interrupted ones: the first
   // one carries Vapi's resent history, every later one just the new utterance.
   turnsSent = 0;
+  // Things the backend learned out-of-band (e.g. a contact-form submission)
+  // that the model must see, prepended to the next turn's message.
+  private pendingNotes: string[] = [];
   private readonly input = new InputQueue();
   private readonly ready: Promise<RunningQuery>;
   private turnLock: Promise<void> = Promise.resolve();
@@ -146,6 +150,16 @@ export class CallAgent {
       console.error(`agentSession: session for call ${callId} failed to start`, error);
       closeCallAgent(callId);
     });
+  }
+
+  addNote(note: string): void {
+    this.pendingNotes.push(note);
+  }
+
+  takeNotes(): string[] {
+    const notes = this.pendingNotes;
+    this.pendingNotes = [];
+    return notes;
   }
 
   get isIdle(): boolean {
@@ -281,6 +295,15 @@ export function warmCallAgent(callId: string): void {
   });
 }
 
+// Returns false when no session for this call is held in memory (e.g. the
+// process restarted mid-call), in which case the note can't be delivered.
+export function queueCallNote(callId: string, note: string): boolean {
+  const agent = liveAgents.get(callId);
+  if (!agent) return false;
+  agent.addNote(note);
+  return true;
+}
+
 export function closeCallAgent(callId: string): void {
   const agent = liveAgents.get(callId);
   agents.delete(callId);
@@ -293,6 +316,11 @@ const reaper = setInterval(() => {
   for (const agent of liveAgents.values()) {
     if (agent.isIdle && now - agent.lastActivity > IDLE_CLOSE_MS) {
       closeCallAgent(agent.callId);
+      // A session idle this long means the call is over; finalize it in case
+      // neither Vapi's end-of-call-report nor the browser's call-end arrived.
+      finalizeCall(agent.callId, "idle-timeout").catch((error) => {
+        console.error(`agentSession: idle finalize failed for call ${agent.callId}`, error);
+      });
     }
   }
 }, REAP_INTERVAL_MS);

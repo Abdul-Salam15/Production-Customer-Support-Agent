@@ -499,8 +499,21 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: payload.name, email: rawEmail, callbackTime: payload.when })
-    }).then(function () { submitContactForm(payload); })
-      .catch(function () { submitContactForm(payload); });
+    }).then(function (r) {
+      // The server queued a note for the model once the submission was
+      // stored; this message makes it reply now (creating the escalation
+      // and confirming) instead of waiting for the caller to speak again.
+      if (r.ok && activeVapi) {
+        try {
+          activeVapi.send({
+            type: 'add-message',
+            message: { role: 'user', content: "I've sent my callback details using the on-screen form." },
+            triggerResponseEnabled: true
+          });
+        } catch (err) { console.error('contact form: could not notify the agent', err); }
+      }
+      submitContactForm(payload);
+    }).catch(function () { submitContactForm(payload); });
   });
 
   function sayInstead() {

@@ -12,31 +12,31 @@ function maskEmail(email: string): string {
   return domain ? `${local.slice(0, 2)}***@${domain}` : email;
 }
 
-// Brevo's HTTP API (https://api.brevo.com), not SMTP — confirmed Render
-// blocks outbound SMTP entirely (both port 465 direct-TLS and 587 STARTTLS
-// hang until timeout from there, while both worked fine from an
-// unrestricted network), but plain HTTPS on 443 is never blocked.
+// Resend's HTTP API (https://resend.com/docs/api-reference/emails/send-email),
+// not SMTP — confirmed Render blocks outbound SMTP entirely (both port 465
+// direct-TLS and 587 STARTTLS hang until timeout from there), but plain
+// HTTPS on 443 is never blocked. EMAIL_FROM must be on a domain verified in
+// Resend; it may include a display name ("RelayPay Support <support@...>").
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
   const env = getEnv();
   try {
-    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
-        accept: "application/json",
         "content-type": "application/json",
-        "api-key": env.BREVO_API_KEY,
+        authorization: `Bearer ${env.RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        sender: { email: env.EMAIL_FROM },
-        to: [{ email: args.to }],
+        from: env.EMAIL_FROM,
+        to: [args.to],
         subject: args.subject,
-        textContent: args.text,
+        text: args.text,
       }),
     });
 
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Brevo API returned ${res.status}: ${body.slice(0, 300)}`);
+      throw new Error(`Resend API returned ${res.status}: ${body.slice(0, 300)}`);
     }
   } catch (error) {
     // Logged to audit_log, not just the server console — a failed send is

@@ -13,37 +13,37 @@ function maskEmail(email: string): string {
   return domain ? `${local.slice(0, 2)}***@${domain}` : email;
 }
 
-// Brevo's HTTP API (https://api.brevo.com), not SMTP — confirmed Render
-// blocks outbound SMTP entirely (both port 465 direct-TLS and 587 STARTTLS
-// hang until timeout from there, while both worked fine from an
-// unrestricted network), but plain HTTPS on 443 is never blocked.
+// Resend's HTTP API (https://resend.com/docs/api-reference/emails/send-email),
+// not SMTP — confirmed Render blocks outbound SMTP entirely (both port 465
+// direct-TLS and 587 STARTTLS hang until timeout from there), but plain
+// HTTPS on 443 is never blocked. EMAIL_FROM must be on a domain verified in
+// Resend; it may include a display name ("RelayPay Support <support@...>").
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
-  const apiKey = process.env.BREVO_API_KEY;
+  const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.EMAIL_FROM;
 
   if (!apiKey || !fromEmail) {
-    throw new Error("BREVO_API_KEY and EMAIL_FROM must be set");
+    throw new Error("RESEND_API_KEY and EMAIL_FROM must be set");
   }
 
   try {
-    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
-        accept: "application/json",
         "content-type": "application/json",
-        "api-key": apiKey,
+        authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        sender: { email: fromEmail },
-        to: [{ email: args.to }],
+        from: fromEmail,
+        to: [args.to],
         subject: args.subject,
-        textContent: args.text,
+        text: args.text,
       }),
     });
 
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Brevo API returned ${res.status}: ${body.slice(0, 300)}`);
+      throw new Error(`Resend API returned ${res.status}: ${body.slice(0, 300)}`);
     }
   } catch (error) {
     // Logged to audit_log, not just the server console — a failed send is

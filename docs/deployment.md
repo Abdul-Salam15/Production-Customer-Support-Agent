@@ -201,29 +201,30 @@ you need it for the next service.
 | `SUPABASE_URL` | your Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | your Supabase service role key |
 | `MCP_SERVER_TOKEN` | make up a long random token — the agent backend must use this exact same value |
-| `BREVO_API_KEY` | your Brevo API key (see the setup note below) |
-| `EMAIL_FROM` | the address emails are sent from — must be a verified sender in Brevo |
+| `RESEND_API_KEY` | your Resend API key (see the setup note below) |
+| `EMAIL_FROM` | the address emails are sent from — must be on a domain verified in Resend |
 | `SUPPORT_TEAM_EMAIL` | where escalation/call-summary alerts go — can be the same as `EMAIL_FROM` |
 
 Do not set `PORT` — Render sets it automatically and the code already reads it from the
 environment.
 
-**Brevo setup** (needed once): emails go through Brevo's HTTP API, not SMTP — Render blocks
+**Resend setup** (needed once): emails go through Resend's HTTP API, not SMTP — Render blocks
 outbound SMTP entirely (confirmed: both port 465 and 587 just hang until timeout from a deployed
 Render service, while both work fine from an unrestricted network), but plain HTTPS is never
 blocked.
-1. Sign up at brevo.com (free tier: 300 emails/day).
-2. **Settings → Senders & IP → Senders** — add and verify the email address you want to send
-   from (Brevo emails you a confirmation link). Use that exact address as `EMAIL_FROM`.
-3. **Settings → SMTP & API → API Keys** — create a new API key and use it as `BREVO_API_KEY`.
+1. Sign up at resend.com (free tier: 3,000 emails/month, 100/day).
+2. **Domains → Add Domain** — enter a domain you control (e.g. `yourdomain.com`), then add the
+   DNS records Resend shows (DKIM and SPF; DMARC recommended) at your domain registrar and click
+   **Verify**. Resend does not allow `@gmail.com`/`@outlook.com` senders at all.
+3. Set `EMAIL_FROM` to an address on that domain, optionally with a display name —
+   e.g. `RelayPay Support <support@yourdomain.com>`.
+4. **API Keys → Create API Key** (sending access is enough) and use it as `RESEND_API_KEY`.
 
-**Deliverability note:** if `EMAIL_FROM` is a `@gmail.com`/`@yahoo.com`/`@outlook.com` address,
-expect emails to be unreliable — these providers publish a strict DMARC policy that tells every
-receiving mail server to reject or quarantine mail claiming to be from their domain that didn't
-actually come from their own infrastructure, regardless of which provider relays it or whether
-that provider has verified you own the inbox. The durable fix is sending from a domain you
-control DNS for — add it under **Senders, Domains & Dedicated IPs → Domains** in Brevo, add the
-SPF/DKIM records it gives you to that domain's DNS, and set `EMAIL_FROM` to an address on it.
+**Without a verified domain** you can only send from `onboarding@resend.dev`, and only to the
+email address your Resend account was created with — fine for a quick smoke test with
+`SUPPORT_TEAM_EMAIL` set to that address, but customer emails (escalation confirmations, call
+summaries) will be rejected until a domain is verified. A rejected send shows up in the Audit
+Logs tab as "Failed to send email ... (Resend API returned 403 ...)".
 
 ### F2. Deploy `agent-backend`
 
@@ -245,8 +246,8 @@ Same flow as F1, with:
 | `VAPI_PUBLIC_KEY` | your Vapi public key |
 | `VAPI_ASSISTANT_ID` | your **real** assistant's ID (Part G) |
 | `SUPABASE_ANON_KEY` | your Supabase project's anon/public key — safe client-side, powers the specialist dashboard's login |
-| `BREVO_API_KEY` | same Brevo API key as `mcp-server`'s |
-| `EMAIL_FROM` | same verified sender address as `mcp-server`'s (see F1's Brevo setup note) |
+| `RESEND_API_KEY` | same Resend API key as `mcp-server`'s |
+| `EMAIL_FROM` | same sender address as `mcp-server`'s (see F1's Resend setup note) |
 | `SUPPORT_TEAM_EMAIL` | same internal recipient as `mcp-server`'s |
 
 **You should see** the same build-log-then-live pattern, ending in a URL like

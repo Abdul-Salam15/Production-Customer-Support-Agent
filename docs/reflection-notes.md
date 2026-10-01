@@ -313,3 +313,8 @@
   null `ended_at`: `/vapi/events` works (verified with the real secret), so Vapi simply isn't
   configured to send `end-of-call-report` — which also means the call-summary email has never
   fired.
+- Switched email from Brevo to Resend's HTTP API (`POST https://api.resend.com/emails`, same
+  plain-`fetch` approach, no new dependency) in both `apps/agent/src/mailer.ts` and
+  `apps/mcp-server/src/lib/mailer.ts`; `BREVO_API_KEY` is replaced by `RESEND_API_KEY`. Resend
+  refuses freemail senders outright, so this also forces the custom-domain fix for the gmail.com
+  DMARC limitation above rather than leaving mail silently undelivered.

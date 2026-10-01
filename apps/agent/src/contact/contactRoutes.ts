@@ -2,6 +2,7 @@ import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { publishCallEvent } from "../realtime/callEvents.js";
+import { queueCallNote } from "../session/agentSession.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -60,6 +61,20 @@ async function handleContactSubmission(req: Request, res: Response): Promise<voi
       res.status(500).json({ error: "failed to store contact details" });
       return;
     }
+
+    // The model only ever sees the caller's utterances, so without this it
+    // never learns the form was submitted and never calls create_escalation
+    // — the case silently never reaches the support queue. Delivered with
+    // the next turn (which the frontend triggers right after this returns).
+    queueCallNote(
+      callId,
+      `[System note — not spoken by the caller: the caller just submitted the on-screen contact form. ` +
+        `Name: ${name}. Email: ${email}.${callbackTime ? ` Preferred callback time: ${callbackTime}.` : ""} ` +
+        `These details are stored server-side and are authoritative. If no escalation has been created on this call yet, ` +
+        `call create_escalation now with these details, the matching category, and a short reason from the conversation ` +
+        `so far, then briefly confirm a specialist will follow up. Do not read the email address aloud. ` +
+        `If the caller's message below asks something else, answer it too.]`
+    );
 
     // Prepares the note for Stage 8's frontend to relay into the live Vapi
     // session via the Web SDK's add-message call — a browser-side API this
