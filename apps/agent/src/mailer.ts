@@ -29,11 +29,20 @@ function maskEmail(email: string): string {
 // must not let a send failure block whatever operation triggered it.
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
   const env = getEnv();
-  await getTransporter().sendMail({
-    from: env.GMAIL_USER,
-    to: args.to,
-    subject: args.subject,
-    text: args.text,
-  });
+  try {
+    await getTransporter().sendMail({
+      from: env.GMAIL_USER,
+      to: args.to,
+      subject: args.subject,
+      text: args.text,
+    });
+  } catch (error) {
+    // Logged to audit_log, not just the server console — a failed send is
+    // otherwise invisible to anyone without direct hosting-platform log
+    // access, which an admin diagnosing "I never got the email" doesn't have.
+    const reason = error instanceof Error ? error.message : String(error);
+    void logAudit("email", `Failed to send email to ${maskEmail(args.to)} — "${args.subject}" (${reason})`);
+    throw error;
+  }
   void logAudit("email", `Email sent to ${maskEmail(args.to)} — "${args.subject}"`);
 }

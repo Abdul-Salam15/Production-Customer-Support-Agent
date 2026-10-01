@@ -335,6 +335,8 @@ select.form-field__input { padding-right: 32px; }
 .audit-row--email .audit-row__cat { color: var(--c-success); }
 .audit-row--team .audit-row__cat { color: var(--c-primary); }
 .audit-row--account .audit-row__cat { color: var(--c-accent); }
+.audit-row--failed { background: #FBF4F3; }
+.audit-row--failed .audit-row__cat, .audit-row--failed .audit-row__msg { color: var(--c-high); }
 .audit-row__msg { color: var(--c-text); text-wrap: pretty; }
 .audit-row__time { font-size: var(--fs-2xs); color: var(--c-text-3); white-space: nowrap; }
 

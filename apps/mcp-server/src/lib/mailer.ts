@@ -41,11 +41,20 @@ function maskEmail(email: string): string {
 // escalation/ticket row is already committed by the time this runs).
 export async function sendEmail(args: SendEmailArgs): Promise<void> {
   const user = process.env.GMAIL_USER;
-  await getTransporter().sendMail({
-    from: user,
-    to: args.to,
-    subject: args.subject,
-    text: args.text,
-  });
+  try {
+    await getTransporter().sendMail({
+      from: user,
+      to: args.to,
+      subject: args.subject,
+      text: args.text,
+    });
+  } catch (error) {
+    // Logged to audit_log, not just the server console — a failed send is
+    // otherwise invisible to anyone without direct hosting-platform log
+    // access, which an admin diagnosing "I never got the email" doesn't have.
+    const reason = error instanceof Error ? error.message : String(error);
+    void logAudit("email", `Failed to send email to ${maskEmail(args.to)} — "${args.subject}" (${reason})`);
+    throw error;
+  }
   void logAudit("email", `Email sent to ${maskEmail(args.to)} — "${args.subject}"`);
 }

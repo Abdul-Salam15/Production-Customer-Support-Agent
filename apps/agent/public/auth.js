@@ -602,7 +602,8 @@
     if (!events.length) { list.innerHTML = ''; empty.hidden = false; return; }
     empty.hidden = true;
     list.innerHTML = events.map(function (e) {
-      return '<li class="audit-row audit-row--' + esc(e.category) + '">' +
+      var failed = /^Failed to/.test(e.message);
+      return '<li class="audit-row audit-row--' + esc(e.category) + (failed ? ' audit-row--failed' : '') + '">' +
         '<span class="audit-row__cat">' + esc(CATEGORY_LABEL[e.category] || e.category) + '</span>' +
         '<span class="audit-row__msg">' + esc(e.message) + '</span>' +
         '<span class="audit-row__time tabular">' + fmtAuditTime(e.created_at) + '</span>' +
