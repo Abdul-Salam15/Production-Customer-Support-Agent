@@ -194,12 +194,14 @@
         <a class="link-quiet" href="#" data-act="export-tool-calls-csv">Export CSV</a>
       </div>
     </div>
-    <table class="tool-call-table">
-      <thead>
-        <tr><th scope="col">Tool</th><th scope="col">Purpose and input</th><th scope="col">Result</th><th scope="col">Status</th><th scope="col">Time</th></tr>
-      </thead>
-      <tbody data-tool-call-body></tbody>
-    </table>
+    <div class="tool-call-table-wrap">
+      <table class="tool-call-table">
+        <thead>
+          <tr><th scope="col">Tool</th><th scope="col">Purpose and input</th><th scope="col">Result</th><th scope="col">Status</th><th scope="col">Time</th></tr>
+        </thead>
+        <tbody data-tool-call-body></tbody>
+      </table>
+    </div>
     <p class="audit__empty" data-tool-call-empty hidden>No tool calls recorded yet.</p>
   </div>
 </section>

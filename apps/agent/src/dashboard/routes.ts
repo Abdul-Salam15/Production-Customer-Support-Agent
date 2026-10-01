@@ -669,13 +669,26 @@ function registerTeamRoutes(router: Router): void {
       // response — this is exactly what made the Confirm change button
       // look broken (it was just waiting on an email send with zero
       // feedback) when GMAIL_USER/GMAIL_APP_PASSWORD are still placeholders.
+      const changedAt = new Date().toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "UTC",
+        timeZoneName: "short",
+      });
+
       sendEmail({
         to: target.email,
         subject: "Your RelayPay role has changed",
         text: [
           `Hi ${target.full_name ?? ""},`.trim(),
           ``,
-          `Your role was changed from ${target.role} to ${role} by ${staffUser.fullName ?? staffUser.email}.`,
+          `Your role was changed from ${target.role} to ${role}.`,
+          ``,
+          `Changed by: ${staffUser.fullName ?? staffUser.email}`,
+          `Changed at: ${changedAt}`,
           ``,
           `— RelayPay Support`,
         ].join("\n"),

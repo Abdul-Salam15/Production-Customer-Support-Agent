@@ -192,7 +192,10 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
 
   void logAudit("case", `New ${priority}-priority ${args.category} escalation created (${escalationId}).`);
 
-  await notifyEscalationCreated({
+  // Not awaited: notifyEscalationCreated already never throws (internally
+  // Promise.allSettled'd), but a slow/hanging Gmail connection must not add
+  // that latency to the tool call's own response.
+  void notifyEscalationCreated({
     escalationId,
     priority,
     category: args.category,

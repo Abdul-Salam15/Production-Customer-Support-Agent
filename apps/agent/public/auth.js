@@ -668,7 +668,8 @@
 
   function renderToolCallTable() {
     var body = $('[data-tool-call-body]'), empty = $('[data-tool-call-empty]');
-    var rows = filteredToolCalls().slice().reverse();
+    // /api/dashboard/tool-calls already returns newest-first — no reverse needed.
+    var rows = filteredToolCalls();
     if (!rows.length) { body.innerHTML = ''; empty.hidden = false; return; }
     empty.hidden = true;
     body.innerHTML = rows.map(toolCallTableRowHTML).join('');
