@@ -1,15 +1,12 @@
 import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
-import { query, AbortError } from "@anthropic-ai/claude-agent-sdk";
 import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
-import { buildSystemPrompt } from "../systemPrompt.js";
-import { getSession, createSession, setSdkSessionId, nextTurnIndex } from "../session/agentSession.js";
+import { getOrCreateCallAgent, type CallAgent } from "../session/agentSession.js";
 import { createAbortController } from "../session/abort.js";
 import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChunkId } from "./streaming.js";
 import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext } from "../outputGuard.js";
 import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
-import { logAudit } from "../auditLog.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -61,31 +58,17 @@ function buildPromptFromHistory(messages: VapiMessage[]): string {
   return `[Conversation so far, already handled by a previous agent process — do not respond to it, only to the final message below]\n${transcript}\n\nCustomer: ${latest.content}`;
 }
 
-async function upsertConversation(callId: string): Promise<string> {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from("conversations")
-    .upsert({ vapi_call_id: callId }, { onConflict: "vapi_call_id" })
-    .select("conversation_id")
-    .single();
-
-  if (error || !data) {
-    throw new Error(`failed to upsert conversations row: ${error?.message}`);
-  }
-  return data.conversation_id as string;
-}
-
 async function writeConversationTurns(
-  conversationId: string,
-  callId: string,
+  agent: CallAgent,
   customerText: string,
   agentText: string,
   answerType: string | null,
   confidence: string | null
 ): Promise<void> {
   const supabase = getSupabaseClient();
-  const customerIndex = nextTurnIndex(callId);
-  const agentIndex = nextTurnIndex(callId);
+  const customerIndex = agent.turnIndex++;
+  const agentIndex = agent.turnIndex++;
+  const conversationId = agent.conversationId;
 
   const { error } = await supabase.from("conversation_turns").insert([
     {
@@ -286,22 +269,24 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  let session = getSession(callId);
-  let prompt: string;
+  // Usually already started by the "in-progress" status-update webhook, so
+  // this resolves immediately instead of paying for SDK startup here.
+  const agent = await getOrCreateCallAgent(callId);
+  const prompt = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
 
-  if (session) {
-    prompt = userMessage.content;
-  } else {
-    const conversationId = await upsertConversation(callId);
-    session = createSession(callId, conversationId);
-    prompt = buildPromptFromHistory(body.messages);
-    void logAudit("call", "A new call started.");
-  }
-
-  const conversationId = session.conversationId;
+  const conversationId = agent.conversationId;
   const guardContext = await buildGuardContext(conversationId, userMessage.content);
   const guard = new OutputGuard(guardContext);
+
+  // Vapi signals barge-in by dropping this HTTP connection. Interrupting
+  // (rather than killing the session) stops generation for a reply nobody
+  // will hear while keeping the subprocess warm for the next turn.
+  let interrupted = false;
   const abortController = createAbortController(req, res);
+  abortController.signal.addEventListener("abort", () => {
+    interrupted = true;
+    agent.interrupt();
+  });
 
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream");
@@ -311,55 +296,48 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
 
   const chunkId = newChunkId();
   const modelName = body.model ?? env.ANTHROPIC_MODEL;
-  const tagBuffer = createTagStrippingBuffer();
   const pendingToolUses = new Map<string, string>();
+
+  // A turn that uses a tool produces several text blocks (e.g. "Let me check
+  // that." before the tool call, then the answer after it). Each block may
+  // open with its own tag, and gets a space before it so consecutive blocks
+  // aren't spoken as "fees.RelayPay".
+  let tagBuffer = createTagStrippingBuffer();
+  let streamedTag: ReturnType<typeof tagBuffer.getTag> = { answerType: null, confidence: null };
+  let spokenSoFar = "";
+  let needsSeparator = false;
+  const speak = (text: string) => {
+    if (!text) return;
+    const out = needsSeparator && spokenSoFar && !/\s$/.test(spokenSoFar) && !/^\s/.test(text) ? ` ${text}` : text;
+    needsSeparator = false;
+    spokenSoFar += out;
+    writeSseChunk(res, modelName, chunkId, out);
+  };
+  const rememberTag = () => {
+    const tag = tagBuffer.getTag();
+    if (tag.answerType && !streamedTag.answerType) streamedTag = tag;
+  };
 
   let finalText = "";
   let sawResult = false;
 
   try {
-      const q = query({
-        prompt,
-        options: {
-          systemPrompt: buildSystemPrompt(),
-          model: env.ANTHROPIC_MODEL,
-          tools: [],
-          permissionMode: "bypassPermissions",
-          allowDangerouslySkipPermissions: true,
-          includePartialMessages: true,
-          resume: session.sdkSessionId ?? undefined,
-          abortController,
-          mcpServers: {
-            relaypay: {
-              type: "http",
-              // MCP_SERVER_URL is the service's base origin; the server's
-              // Streamable HTTP endpoint is mounted at /mcp.
-              url: `${env.MCP_SERVER_URL}/mcp`,
-              headers: {
-                Authorization: `Bearer ${env.MCP_SERVER_TOKEN}`,
-                "x-conversation-id": conversationId,
-              },
-              // Our 8 tools must always be visible to the model — deferring
-              // them behind tool search risks the model never discovering
-              // (or hallucinating the use of) search_knowledge_base, which
-              // the system prompt requires before every product/policy answer.
-              alwaysLoad: true,
-            },
-          },
-        },
-      });
-
-      for await (const message of q) {
-        if ("session_id" in message && message.session_id) {
-          setSdkSessionId(callId, message.session_id);
-        }
-
+      for await (const message of agent.runTurn(prompt)) {
         if (message.type === "stream_event") {
           const event = message.event;
-          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            const afterTag = tagBuffer.push(event.delta.text);
-            const toForward = guard.push(afterTag);
-            writeSseChunk(res, modelName, chunkId, toForward);
+          if (event.type === "content_block_start" && event.content_block.type === "text") {
+            tagBuffer = createTagStrippingBuffer();
+            needsSeparator = true;
+          } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            speak(guard.push(tagBuffer.push(event.delta.text)));
+          } else if (event.type === "content_block_stop") {
+            // A finished block can be checked in full, so release it now
+            // instead of holding its tail back until text after the next
+            // tool call arrives — the caller hears "Let me check that" while
+            // the tool runs, not after.
+            speak(guard.push(tagBuffer.flush()));
+            speak(guard.flushRemaining());
+            rememberTag();
           }
         } else if (message.type === "assistant") {
           const content = (message.message?.content ?? []) as unknown[];
@@ -390,29 +368,34 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
         }
       }
     } catch (error) {
-      if (error instanceof AbortError) {
-        console.log(`customLlm: turn aborted for call ${callId} (caller interrupted)`);
-      } else {
-        console.error("customLlm: Agent SDK query failed", error);
-      }
+      console.error(`customLlm: Agent SDK turn failed for call ${callId}`, error);
+    }
+
+    if (interrupted) {
+      console.log(`customLlm: turn interrupted for call ${callId} (caller talked over the reply)`);
     }
 
     if (!res.writableEnded) {
-      const remaining = guard.flushRemaining();
-      if (remaining) writeSseChunk(res, modelName, chunkId, remaining);
+      speak(guard.push(tagBuffer.flush()));
+      speak(guard.flushRemaining());
       writeSseDone(res, modelName, chunkId);
     }
+    rememberTag();
 
     if (guard.wasTripped()) {
       const reason = guard.getBlockReason();
       if (reason) await logGuardBlock(conversationId, reason, finalText);
     }
 
-    if (sawResult) {
-      const { text: cleanedText, tag } = stripTag(finalText);
+    // An interrupted turn was never heard in full, so it isn't recorded —
+    // the same as before, when an interruption aborted the whole query.
+    if (sawResult && !interrupted) {
+      const { text: cleanedText, tag: finalTag } = stripTag(finalText);
+      // In a tool-using turn the tag usually leads the first text block, not
+      // the final one `result` holds, so fall back to the tag seen in-stream.
+      const tag = finalTag.answerType ? finalTag : streamedTag;
       await writeConversationTurns(
-        conversationId,
-        callId,
+        agent,
         userMessage.content,
         cleanedText,
         tag.answerType,

@@ -285,3 +285,31 @@
   reduced/unreliable deliverability rather than acquire a domain. If outbound email reliability
   becomes a real requirement later, revisit this — it is not something further code changes can
   fix.
+- Voice latency: a real call ended at 00:28 with the agent never replying (conversation row,
+  zero turns), and measured on the live deployment a simple reply took 14.7s to its first
+  spoken word, with the whole reply arriving in one lump. Three causes, each measured:
+  (1) `customLlm.ts` called `query()` per turn, spawning a fresh Agent SDK subprocess every time
+  — 3.4-5.6s of startup on a dev machine before Claude was contacted, more on Render. Replaced
+  with one long-lived session per call (`session/agentSession.ts`): `startup()` + a
+  streaming-input queue, one user message per turn, turns serialized so the shared message
+  stream can't get out of step, barge-in via `interrupt()` (session survives) instead of killing
+  the process, closed on call end or after 3 minutes idle (each process holds ~250 MB). Started
+  early from Vapi's `status-update` "in-progress" webhook so the greeting covers the startup.
+  (2) Without `settingSources: []` the SDK loaded every settings source on the machine plus
+  CLAUDE.md and their MCP servers/plugins — measured warm turns dropping from 3.4-4.9s to
+  1.0-1.7s with isolation on, and it stopped this repo's folder name leaking into replies.
+  (3) The output guard held a fixed 200 chars and only released past 400, so any reply shorter
+  than 400 chars reached Vapi only once complete. Hold-back is now sized per call to the longest
+  pattern it watches (64-char emails, or the caller's longest internal-note sentence), released
+  on word boundaries, and each finished text block is released in full — so "Let me check that"
+  is heard while the tool runs. Found and fixed while testing: the guard false-positived on a
+  verified caller's *own* email while it was still streaming (judged "...@lagosledger.ex" before
+  ".ample" arrived) and replaced the reply with the fallback line; still-growing emails are now
+  judged only once complete or at the final flush. Also warmed the `embed-kb` Edge Function at
+  call start (6.4s cold vs ~1s warm on a call's first search) and stopped awaiting the
+  retrieval-log insert. Measured end-to-end on a clean local stack afterwards: 2.0-2.2s to first
+  spoken text on knowledge-base turns with a spoken lead-in, ~4.2-4.8s on those without one
+  (model decides tool -> search -> model answers). Separately, every call in the database has a
+  null `ended_at`: `/vapi/events` works (verified with the real secret), so Vapi simply isn't
+  configured to send `end-of-call-report` — which also means the call-summary email has never
+  fired.

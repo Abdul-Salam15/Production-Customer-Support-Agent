@@ -51,18 +51,21 @@ async function handle(args: SearchKnowledgeBaseArgs, ctx: ToolContext): Promise<
     content: row.content,
   }));
 
-  try {
-    await supabase.from("retrieval_logs").insert({
+  // Not awaited: the log is bookkeeping, and the caller is waiting on this
+  // tool's result with a live voice call.
+  supabase
+    .from("retrieval_logs")
+    .insert({
       conversation_id: ctx.conversationId,
       query: args.query,
       chunk_ids: rows.map((row) => String(row.id)),
       source_titles: chunks.map((chunk) => chunk.source_title),
       source_summaries: chunks.map((chunk) => chunk.source_summary),
       sufficient_context: sufficientContext,
+    })
+    .then(({ error: logError }) => {
+      if (logError) console.error("search_knowledge_base: failed to write retrieval_logs row", logError.message);
     });
-  } catch (logError) {
-    console.error("search_knowledge_base: failed to write retrieval_logs row", logError);
-  }
 
   return { sufficient_context: sufficientContext, chunks };
 }

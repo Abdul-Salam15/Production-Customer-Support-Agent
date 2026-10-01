@@ -41,6 +41,20 @@ export function createTagStrippingBuffer() {
 
       return "";
     },
+    // The text block ended: release whatever is still being held while
+    // waiting to see whether a tag would appear, stripping the tag if the
+    // whole block was just the tag. Without this, a short block (< lookahead)
+    // was never released at all.
+    flush(): string {
+      if (resolved) return "";
+      resolved = true;
+      const match = buffer.match(TAG_RE);
+      if (match) {
+        tag = { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase() };
+        return buffer.slice(match[0].length);
+      }
+      return buffer;
+    },
     getTag(): ParsedTag {
       return tag;
     },

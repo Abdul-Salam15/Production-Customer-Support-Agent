@@ -4,6 +4,7 @@ import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { sendEmail } from "../mailer.js";
 import { logAudit } from "../auditLog.js";
+import { warmCallAgent, closeCallAgent } from "../session/agentSession.js";
 
 // Vapi's documented webhook contract: every server message arrives wrapped
 // as { message: { type, call: { id }, endedReason, ... } }. Verify against
@@ -14,6 +15,8 @@ interface VapiEndOfCallReport {
     type?: string;
     call?: { id?: string };
     endedReason?: string;
+    // status-update messages only: "queued" | "ringing" | "in-progress" | "ended" | ...
+    status?: string;
   };
 }
 
@@ -77,9 +80,18 @@ async function deriveFinalStatus(conversationId: string): Promise<{ status: Fina
 async function handleEndOfCallReport(req: Request, res: Response): Promise<void> {
     const body = req.body as VapiEndOfCallReport;
 
+    if (body.message?.type === "status-update") {
+      // The call is live: start the Agent SDK session now, while Vapi plays
+      // the greeting, so the caller's first sentence doesn't pay for it.
+      const statusCallId = body.message.call?.id;
+      if (statusCallId && body.message.status === "in-progress") warmCallAgent(statusCallId);
+      if (statusCallId && body.message.status === "ended") closeCallAgent(statusCallId);
+      res.status(200).json({ received: true });
+      return;
+    }
+
     if (body.message?.type !== "end-of-call-report") {
-      // Not the report we finalize on; acknowledge and ignore other Vapi
-      // server-message types (this stage only handles the end-of-call one).
+      // Acknowledge and ignore the other Vapi server-message types.
       res.status(200).json({ received: true });
       return;
     }
@@ -89,6 +101,7 @@ async function handleEndOfCallReport(req: Request, res: Response): Promise<void>
       res.status(400).json({ error: "call.id is required" });
       return;
     }
+    closeCallAgent(callId);
 
     const supabase = getSupabaseClient();
     const { data: conversation } = await supabase

@@ -4,7 +4,12 @@ import { getSupabaseClient } from "./supabaseClient.js";
 // against a rolling window of the most recent output rather than the whole
 // buffered response, so the common (safe) case still streams incrementally;
 // the window just needs to be longer than any pattern we're watching for.
-const HOLD_BACK_CHARS = 200;
+// Sized per call from what this guard actually watches, not a fixed 200 —
+// a fixed 200 (flushed only past 400) meant a typical sub-400-char spoken
+// reply reached Vapi in one lump only after the model had fully finished.
+const EMAIL_HOLD_BACK = 64;
+const AMOUNT_HOLD_BACK = 32;
+const HOLD_BACK_MARGIN = 8;
 
 const EMAIL_RE = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
 const AMOUNT_RE = /\$\s?\d[\d,]*(\.\d{1,2})?|\b\d[\d,]*(\.\d{1,2})?\s?(usd|eur|gbp|dollars?|pounds?|euros?)\b/gi;
@@ -21,9 +26,16 @@ export interface GuardContext {
 
 export type BlockReason = "email" | "amount" | "internal_phrase";
 
-function detectViolation(buffer: string, ctx: GuardContext): BlockReason | null {
-  const emails = buffer.match(EMAIL_RE) ?? [];
-  for (const email of emails) {
+// `final` is false while the model is still streaming: an email that runs
+// right up to the end of the buffer may still be growing ("...@lagosledger.ex"
+// before ".ample" arrives), and judging that partial against the caller's own
+// address false-positives. It stays held back and is judged once complete,
+// or at the final flush.
+function detectViolation(buffer: string, ctx: GuardContext, final: boolean): BlockReason | null {
+  for (const match of buffer.matchAll(EMAIL_RE)) {
+    const email = match[0];
+    const stillGrowing = !final && (match.index ?? 0) + email.length === buffer.length;
+    if (stillGrowing) continue;
     const normalized = email.toLowerCase();
     const isOwnAccount = ctx.verifiedAccountEmail?.toLowerCase() === normalized;
     const callerSaidItThemselves = ctx.customerUtterance.toLowerCase().includes(normalized);
@@ -61,8 +73,15 @@ export class OutputGuard {
   private tripped = false;
   private fallbackSent = false;
   private blockReason: BlockReason | null = null;
+  // A watched pattern can only be missed if part of it was flushed before
+  // the rest arrived, so the held-back tail must be at least as long as the
+  // longest pattern this call could produce.
+  private readonly holdBack: number;
 
-  constructor(private readonly ctx: GuardContext) {}
+  constructor(private readonly ctx: GuardContext) {
+    const longestPhrase = Math.max(0, ...ctx.internalPhrases.map((phrase) => phrase.length));
+    this.holdBack = Math.max(EMAIL_HOLD_BACK, AMOUNT_HOLD_BACK, longestPhrase) + HOLD_BACK_MARGIN;
+  }
 
   push(deltaText: string): string {
     if (this.tripped) {
@@ -71,7 +90,7 @@ export class OutputGuard {
 
     this.buffer += deltaText;
 
-    const violation = detectViolation(this.buffer, this.ctx);
+    const violation = detectViolation(this.buffer, this.ctx, false);
     if (violation) {
       this.tripped = true;
       this.blockReason = violation;
@@ -79,8 +98,12 @@ export class OutputGuard {
       return this.maybeSendFallback();
     }
 
-    if (this.buffer.length > HOLD_BACK_CHARS * 2) {
-      const flushLength = this.buffer.length - HOLD_BACK_CHARS;
+    if (this.buffer.length > this.holdBack) {
+      // Release up to a word boundary only: if a later chunk trips the guard,
+      // the fallback line follows a whole word instead of "...check thI'm not".
+      const lastSpace = this.buffer.lastIndexOf(" ", this.buffer.length - this.holdBack - 1);
+      if (lastSpace < 0) return "";
+      const flushLength = lastSpace + 1;
       const toFlush = this.buffer.slice(0, flushLength);
       this.buffer = this.buffer.slice(flushLength);
       return toFlush;
@@ -91,6 +114,13 @@ export class OutputGuard {
 
   flushRemaining(): string {
     if (this.tripped) {
+      return this.maybeSendFallback();
+    }
+    const violation = detectViolation(this.buffer, this.ctx, true);
+    if (violation) {
+      this.tripped = true;
+      this.blockReason = violation;
+      this.buffer = "";
       return this.maybeSendFallback();
     }
     const remaining = this.buffer;
