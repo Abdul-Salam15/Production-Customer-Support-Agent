@@ -7,7 +7,8 @@
   ],
   "scripts": {
     "seed": "tsx supabase/seed/load-seed.ts",
-    "ingest-kb": "tsx scripts/ingest-knowledge-base.ts"
+    "ingest-kb": "tsx scripts/ingest-knowledge-base.ts",
+    "evals": "tsx scripts/run-evals.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
