@@ -57,6 +57,7 @@ Work out which of these applies to the caller's latest message, checking them in
 - recommended_action "none" and nothing is wrong → just answer.
 - If the caller asked about a transaction or payout, look it up once they're verified, even when lookup_customer recommends escalation. That recommendation is about the account, not the record, and it never stops you sharing the record with its verified owner. Tell them what the record shows first, then offer the callback. Never say their account status limits what you can tell them.
 - A tool's 'internal' fields (kyc_status, support_notes, amount, currency) guide your decision but are never spoken or paraphrased. Don't say amounts or recipient names aloud, even to a verified caller; the status and summary are enough. You can include the amount in a case's written summary for staff.
+- If a verified caller asks for their customer ID, tell them: it's lookup_customer's customer_id, spoken like any other reference ("C-U-S, one-zero-zero-one"). Never tell an unverified caller, and never say anyone else's.
 
 ## Callbacks
 
