@@ -7,6 +7,7 @@ import { createAbortController } from "../session/abort.js";
 import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChunkId } from "./streaming.js";
 import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext } from "../outputGuard.js";
 import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
+import { speakReferences } from "./spokenReferences.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -340,9 +341,12 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   let spokenSoFar = "";
   let needsSeparator = false;
   let firstSpokenAt: Date | null = null;
-  const speak = (text: string) => {
-    if (!text) return;
+  // The guard releases text on word boundaries, so a reference like
+  // "TXN-9001" always arrives here whole and can be rewritten for speech.
+  const speak = (raw: string) => {
+    if (!raw) return;
     firstSpokenAt ??= new Date();
+    const text = speakReferences(raw);
     const out = needsSeparator && spokenSoFar && !/\s$/.test(spokenSoFar) && !/^\s/.test(text) ? ` ${text}` : text;
     needsSeparator = false;
     spokenSoFar += out;
