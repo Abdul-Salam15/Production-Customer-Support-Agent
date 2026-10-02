@@ -9,6 +9,7 @@ import { sendEmail } from "../lib/mailer.js";
 import { logAudit } from "../lib/auditLog.js";
 import { computePriority, confirmSignals } from "../lib/priority.js";
 import { resolveLinkedRecords } from "../lib/linkedRecords.js";
+import { spokenCallbackTime } from "../lib/spokenTime.js";
 
 const inputShape = {
   ticket_id: z.string().optional(),
@@ -292,6 +293,9 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     // What was actually stored (the form's time wins) — the agent must read
     // this back rather than re-derive the time from the conversation.
     callback_time: preferredTime,
+    // Say this verbatim — converting the time to words is done here, not by
+    // the model, which kept reading 14:00 back as "two thirty-five".
+    callback_time_spoken: spokenCallbackTime(preferredTime),
     follow_up_summary: `A ${priority}-priority ${args.category} escalation has been created and a specialist will follow up.`,
   };
 }

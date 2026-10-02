@@ -352,6 +352,10 @@ const SCENARIOS: Scenario[] = [
       c.called(o, "search_knowledge_base");
       c.replyMatches("declines to guarantee", reply, /(can't|cannot|can not|unable to|not able to|isn't possible|no).{0,40}guarantee|guarantee.{0,40}(not|isn't)/i);
       c.replyAvoids("no promise made", reply, /\b(yes|sure)\b.{0,20}(guarantee|by 9)/i);
+      // The knowledge base's answer: timelines depend on external banking
+      // systems and regulatory checks.
+      c.replyMatches("grounded in the timeline policy", reply, /bank|regulat|external/i);
+      c.replyAvoids("doesn't claim the docs lack an answer", reply, /(doesn't|does not|don't) (cover|have|include|address)/i);
       c.noToolErrors(o);
     },
   },
@@ -410,6 +414,18 @@ async function markEnded(db: SupabaseClient, conversationId: string): Promise<vo
 
 // ---------- Run ----------
 
+// The article titles search_knowledge_base returned (from its logged result),
+// so a wrong "the docs don't cover that" can be traced to retrieval or to
+// the model.
+function kbTitles(o: Observed): string[] {
+  const titles = new Set<string>();
+  for (const t of o.tools) {
+    if (t.tool_name !== "search_knowledge_base") continue;
+    for (const m of (t.result_summary ?? "").matchAll(/"source_title":"([^"]+)"/g)) titles.add(m[1]);
+  }
+  return [...titles];
+}
+
 interface Result {
   scenario: Scenario;
   pass: boolean | null;
@@ -443,7 +459,8 @@ async function runScenario(s: Scenario): Promise<Result> {
     `Tools: ${o.toolNames.join(" → ") || "none"}.`,
     o.tickets.length ? `Ticket ${o.tickets.map((t) => `${t.ticket_id} (${t.priority})`).join(", ")}.` : "",
     o.escalations.length ? `Escalation ${o.escalations.map((e) => `${e.escalation_id} (${e.priority})`).join(", ")}.` : "",
-    `Last reply: "${(call.replies.at(-1) ?? "").replace(/\s+/g, " ").trim().slice(0, 220)}"`,
+    kbTitles(o).length ? `KB returned: ${kbTitles(o).join("; ")}.` : "",
+    ...call.replies.map((r, i) => `Reply ${i + 1}: "${r.replace(/\s+/g, " ").trim().slice(0, 200)}"`),
   ]
     .filter(Boolean)
     .join(" ");

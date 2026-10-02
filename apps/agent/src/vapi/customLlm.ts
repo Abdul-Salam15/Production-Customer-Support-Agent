@@ -8,6 +8,7 @@ import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChu
 import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext } from "../outputGuard.js";
 import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
 import { speakReferences } from "./spokenReferences.js";
+import { NarrationFilter } from "./narrationFilter.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -343,6 +344,7 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   // open with its own tag, and gets a space before it so consecutive blocks
   // aren't spoken as "fees.RelayPay".
   let tagBuffer = createTagStrippingBuffer();
+  const narration = new NarrationFilter();
   let streamedTag: ReturnType<typeof tagBuffer.getTag> = { answerType: null, confidence: null };
   let spokenSoFar = "";
   let needsSeparator = false;
@@ -372,16 +374,18 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
           const event = message.event;
           if (event.type === "content_block_start" && event.content_block.type === "text") {
             tagBuffer = createTagStrippingBuffer();
+            narration.reset();
             needsSeparator = true;
           } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            speak(guard.push(tagBuffer.push(event.delta.text)));
+            speak(narration.push(guard.push(tagBuffer.push(event.delta.text))));
           } else if (event.type === "content_block_stop") {
             // A finished block can be checked in full, so release it now
             // instead of holding its tail back until text after the next
             // tool call arrives — the caller hears "Let me check that" while
             // the tool runs, not after.
-            speak(guard.push(tagBuffer.flush()));
-            speak(guard.flushRemaining());
+            speak(narration.push(guard.push(tagBuffer.flush())));
+            speak(narration.push(guard.flushRemaining()));
+            speak(narration.flush());
             rememberTag();
           }
         } else if (message.type === "assistant") {
@@ -428,8 +432,9 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     }
 
     if (!res.writableEnded) {
-      speak(guard.push(tagBuffer.flush()));
-      speak(guard.flushRemaining());
+      speak(narration.push(guard.push(tagBuffer.flush())));
+      speak(narration.push(guard.flushRemaining()));
+      speak(narration.flush());
       writeSseDone(res, modelName, chunkId);
     }
     rememberTag();
