@@ -88,10 +88,15 @@ export function normalizeSpokenEmail(value: string): string {
     .replace(/\s+/g, "");
 }
 
+// Every letter and digit must match — no fuzzy slip, since one letter is a
+// different person — but punctuation the transcriber invents is ignored:
+// "accra-stack" for "accrastack", "accra stack", a dropped or extra dot.
+function emailKey(value: string): string {
+  return normalizeSpokenEmail(value).replace(/[^a-z0-9@]/g, "");
+}
+
 function emailMatches(record: CustomerRecord, supplied: string | undefined): boolean {
-  // Exact once spacing is fixed — no fuzzy slip: one character in an email
-  // is a different person.
-  return !!supplied && normalizeSpokenEmail(supplied) === normalize(record.contact_email);
+  return !!supplied && emailKey(supplied) === emailKey(record.contact_email);
 }
 
 function countOtherFacts(record: CustomerRecord, fields: LookupCustomerFields): number {
