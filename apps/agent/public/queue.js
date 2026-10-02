@@ -140,7 +140,9 @@
       return '<span class="info-grid__warn">No business account</span><span class="info-grid__sub">Signed in as ' +
         esc(c.signedInAccount.email) + '</span>';
     }
-    if (!c.companyName) return '<span class="info-grid__warn">Not matched</span><span class="info-grid__sub">' + esc(a.accountStatus) + '</span>';
+    if (!c.companyName) {
+      return '<span class="info-grid__warn">Not matched</span><span class="info-grid__sub">Unverified caller — confirm their identity on the callback before discussing any account details.</span>';
+    }
     var tone = a.accountStatus === 'Active' ? '' : 'info-grid__warn';
     return esc(c.companyName) + '<span class="info-grid__sub">' + esc(a.plan) + ' plan · <span class="' + tone + '">' + esc(a.accountStatus) + '</span></span>';
   }

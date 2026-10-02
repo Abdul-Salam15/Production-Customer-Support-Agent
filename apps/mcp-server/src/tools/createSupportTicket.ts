@@ -92,6 +92,20 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
   const supabase = getSupabaseClient();
   const conversationId = ctx.conversationId ?? args.conversation_id ?? null;
 
+  // A ticket is tracked against the caller's account and followed up there,
+  // so it needs a verified caller. Without this, anyone who knew a reference
+  // could open tickets on another customer's transaction. An unverified
+  // caller can still get a specialist callback (create_escalation).
+  if (!(await getVerifiedCustomerId(supabase, conversationId))) {
+    return {
+      ticket_created: false,
+      reason: "caller_not_verified",
+      guidance:
+        "Tickets need a verified caller. Offer to verify them (their account email plus name or company), " +
+        "or offer a specialist callback instead. Don't give a reference.",
+    };
+  }
+
   // Idempotency: retries and repeated requests within one call shouldn't
   // create two tickets for the same issue.
   if (conversationId) {
@@ -154,7 +168,8 @@ export function registerCreateSupportTicket(server: McpServer): void {
     {
       title: "Create Support Ticket",
       description:
-        "Log an issue for the support team to follow up on, when it needs tracking but not a specialist callback " +
+        "Log an issue for the support team to follow up on, when it needs tracking but not a specialist callback. " +
+        "Only for a verified caller — for anyone else it returns ticket_created: false; offer verification or a callback instead. " +
         "(use create_escalation when a person must call the caller back). Calling this twice for the same open issue " +
         "returns the same ticket. Priority is computed by the server from the category and the three caller signals — " +
         "report those signals honestly; do not try to set a priority. The returned ticket_id is the only valid reference.",

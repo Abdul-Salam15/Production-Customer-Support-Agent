@@ -400,6 +400,34 @@ const SCENARIOS: Scenario[] = [
     },
   },
   {
+    n: 10,
+    title: "Unverified caller can't open cases on someone's record (extra)",
+    expected:
+      "An unverified caller with a reference gets status only: no ticket is opened, and a callback case isn't linked to the transaction.",
+    run: async (call, c) => {
+      const first = await call.say("Transaction TXN-9004 failed. Please open a ticket for it.");
+      c.replyAvoids("no amount for an unverified caller", first, /800|eight hundred|usd|dollars/i);
+      await call.say("No, I don't have the email. Just open the ticket.");
+      let o = await observe(call);
+      c.add("no ticket opened for an unverified caller", o.tickets.length === 0);
+      await call.say("Fine, then get a specialist to call me back.");
+      o = await observe(call);
+      if (o.toolNames.includes("request_contact_details")) {
+        await call.submitContactForm("Sam Okoro", "sam@example.com", CALLBACK);
+        await call.say("I've sent my callback details using the on-screen form.");
+      }
+      const { data: links } = await supabase
+        .from("escalations")
+        .select("related_transaction_id, customer_id")
+        .eq("conversation_id", (await observe(call)).conversationId ?? "");
+      c.add(
+        "callback case not linked to the transaction or its owner",
+        (links ?? []).every((e: { related_transaction_id: string | null; customer_id: string | null }) => !e.related_transaction_id && !e.customer_id)
+      );
+      c.noToolErrors(o);
+    },
+  },
+  {
     n: 9,
     title: "Voice flow",
     expected: "Vapi captures speech, the backend responds, Vapi speaks the reply, Supabase logs the conversation and tool calls.",
