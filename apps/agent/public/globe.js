@@ -1,5 +1,5 @@
-/* RelayPay globe — isolated Three.js module. A slowly drifting line globe
-   with the payment corridors; static under prefers-reduced-motion.
+/* RelayPay globe — isolated Three.js module. A static line globe showing
+   every payment corridor in the caption, drawn once (and again on resize).
    window.RelayGlobe.setState / setVolume are accepted and ignored.
    Falls back to the inline SVG if WebGL or the CDN is unavailable. */
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -19,7 +19,6 @@ function initGlobe() {
   const D = Math.PI / 180;
   const BLUE = new THREE.Color('#0E2A47');
   const BG = new THREE.Color('#F6F6F3');
-  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   const CITIES = {
     lagos: [6.52, 3.38], nairobi: [-1.29, 36.82], accra: [5.60, -0.19], capetown: [-33.92, 18.42],
@@ -48,7 +47,10 @@ function initGlobe() {
   const tilt = new THREE.Group();
   tilt.rotation.x = 0.32;
   const spin = new THREE.Group();
-  spin.rotation.y = -18 * D;
+  // Turned so all seven cities in the caption face the viewer at once, from
+  // New York (74°W) to Nairobi (37°E). 10° leaves the least-visible city (Cape
+  // Town) well inside the visible face; the old -18° hid New York.
+  spin.rotation.y = 10 * D;
   tilt.add(spin); scene.add(tilt);
 
   // Occluder: page-coloured sphere hides back-side lines (reads as no fill)
@@ -100,41 +102,23 @@ function initGlobe() {
     spin.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), arcMat));
   });
 
-  // Brand direction: calm and minimal, nothing flashy. The globe only drifts
-  // slowly at one constant speed (about one turn every five minutes). It no
-  // longer reacts to the call: the live-status text and dot carry that.
-  const DRIFT = 0.02; // rad/s
-
-  function resize() {
+  // Brand direction: calm and minimal, nothing animated. The globe is drawn
+  // once and only redrawn when its size changes; the live-status text and dot
+  // show what the call is doing.
+  function render() {
     const w = mount.clientWidth, h = mount.clientHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
-    renderOnce();
-  }
-  function renderOnce() { renderer.render(scene, camera); }
-
-  let raf = null, last = 0, visible = true;
-  function frame(ts) {
-    const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts;
-    spin.rotation.y += DRIFT * dt;
     renderer.render(scene, camera);
-    raf = requestAnimationFrame(frame);
   }
-  function start() { if (!raf && !reduce.matches && visible && !document.hidden) { last = 0; raf = requestAnimationFrame(frame); } }
-  function stop() { cancelAnimationFrame(raf); raf = null; }
-
-  new ResizeObserver(resize).observe(mount);
-  new IntersectionObserver(([e]) => { visible = e.isIntersecting; visible ? start() : stop(); }).observe(mount);
-  document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
-  reduce.addEventListener('change', () => { if (reduce.matches) { stop(); renderOnce(); } else start(); });
+  new ResizeObserver(render).observe(mount);
 
   // Kept so app.js's calls stay harmless; the globe no longer changes with the call state.
   window.RelayGlobe = { setState() {}, setVolume() {} };
 
-  resize();
+  render();
   host.classList.add('globe--webgl');
-  start();
 }
 
 try { initGlobe(); } catch (e) { /* SVG fallback stays visible */ }
