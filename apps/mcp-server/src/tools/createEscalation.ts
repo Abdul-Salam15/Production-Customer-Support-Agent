@@ -7,14 +7,7 @@ import { withLogging, type ToolContext } from "../lib/withLogging.js";
 import { generateUniqueReference, referenceInUse } from "./createSupportTicket.js";
 import { sendEmail } from "../lib/mailer.js";
 import { logAudit } from "../lib/auditLog.js";
-
-const CATEGORY_PRIORITY: Record<string, "high" | "medium" | "low"> = {
-  compliance: "high",
-  account: "high",
-  dispute: "high",
-  payment: "medium",
-  other: "low",
-};
+import { computePriority, confirmSignals } from "../lib/priority.js";
 
 const inputShape = {
   ticket_id: z.string().optional(),
@@ -22,9 +15,55 @@ const inputShape = {
   conversation_id: z.string().optional(),
   user_name: z.string(),
   user_email: z.string(),
-  category: z.enum(["compliance", "account", "dispute", "payment", "other"]),
-  reason: z.string(),
-  preferred_time: z.string().optional(),
+  category: z
+    .enum(["compliance", "account", "dispute", "payment", "other"])
+    .describe(
+      "compliance: identity/KYC/verification or regulatory concerns. account: account access, restrictions, " +
+        "suspensions, balances, or account-specific questions. dispute: disputes, refunds, chargebacks, cancellations. " +
+        "payment: transactions, payouts, transfers, or invoices that are late, failed, or wrong. other: anything else."
+    ),
+  reason: z
+    .string()
+    .describe(
+      "One plain written sentence a specialist can act on — what the caller needs and any reference involved " +
+        "(e.g. 'Payout PAY-7002 to Kente Labs has not arrived; caller needs an update'). Not phrased for speech."
+    ),
+  preferred_time: z
+    .string()
+    .optional()
+    .describe(
+      "Only if the caller spoke a callback time aloud (a submitted contact form's time is used automatically). " +
+        "Written form, e.g. 'Fri 30 Oct, 14:00 WAT' — never spelled out for speech."
+    ),
+  related_transaction_id: z
+    .string()
+    .optional()
+    .describe("A transaction reference this concerns, exactly as a lookup returned it. Used to confirm lateness."),
+  related_payout_id: z
+    .string()
+    .optional()
+    .describe("A payout reference this concerns, exactly as a lookup returned it. Used to confirm lateness."),
+  caller_urgent: z
+    .boolean()
+    .describe(
+      "true if the caller expressed frustration, anger, distress, or urgency in their own words or tone — e.g. 'this is " +
+        "the third time I'm calling', 'I need this today', 'my business is losing money', repeated complaints, raised " +
+        "voice, threats to leave. false for a calm, routine request. Judge from what the caller actually said, not from " +
+        "the topic."
+    ),
+  funds_overdue: z
+    .boolean()
+    .describe(
+      "true if money the caller expected has not arrived after its expected arrival or scheduled date, a payout or " +
+        "transaction has failed, or the caller says funds are missing, stuck, or late ('it still hasn't arrived', 'it " +
+        "should have landed last week'). false if nothing is late, or the expected date hasn't passed yet."
+    ),
+  account_restricted: z
+    .boolean()
+    .describe(
+      "true if the caller's account is restricted, suspended, frozen, locked, blocked from payments, or under " +
+        "compliance/verification review — whether they told you or a lookup showed it. false otherwise."
+    ),
 };
 
 type CreateEscalationArgs = {
@@ -36,6 +75,11 @@ type CreateEscalationArgs = {
   category: "compliance" | "account" | "dispute" | "payment" | "other";
   reason: string;
   preferred_time?: string;
+  related_transaction_id?: string;
+  related_payout_id?: string;
+  caller_urgent?: boolean;
+  funds_overdue?: boolean;
+  account_restricted?: boolean;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -188,7 +232,13 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     return { status: "invalid", error: "invalid_email" };
   }
 
-  const priority = CATEGORY_PRIORITY[args.category];
+  const signals = await confirmSignals(
+    supabase,
+    conversationId,
+    { callerUrgent: args.caller_urgent, fundsOverdue: args.funds_overdue, accountRestricted: args.account_restricted },
+    { transactionId: args.related_transaction_id, payoutId: args.related_payout_id }
+  );
+  const { priority, basis } = computePriority(args.category, signals);
 
   const [ticketId, customerId] = await Promise.all([
     resolveLinkedTicketId(supabase, args.ticket_id, conversationId),
@@ -214,7 +264,7 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
 
   if (error) throw new Error(`escalations insert failed: ${error.message}`);
 
-  void logAudit("case", `New ${priority}-priority ${args.category} escalation created (${escalationId}).`);
+  void logAudit("case", `New ${priority}-priority ${args.category} escalation created (${escalationId}) — ${basis}.`);
 
   // Not awaited: notifyEscalationCreated already never throws (internally
   // Promise.allSettled'd), but a slow/hanging Gmail connection must not add
@@ -242,7 +292,9 @@ export function registerCreateEscalation(server: McpServer): void {
     {
       title: "Create Escalation",
       description:
-        "Escalate a request that requires human support. Priority is derived from category, not model-chosen. " +
+        "Escalate a request that requires a human specialist to call the caller back. Priority is computed by the " +
+        "server from the category and the three caller signals (caller_urgent, funds_overdue, account_restricted) — " +
+        "report those honestly from what the caller said and what lookups returned; you cannot set a priority. " +
         "Only pass ticket_id if create_support_ticket returned it on this call; never invent one. " +
         "The returned escalation_id is the caller's only valid reference — read exactly that, or none if this call fails.",
       inputSchema: inputShape,
