@@ -1,8 +1,8 @@
-/* RelayPay globe — isolated Three.js module.
-   API: window.RelayGlobe.setState('idle'|'listening'|'thinking'|'speaking')
-        window.RelayGlobe.setVolume(0..1)
+/* RelayPay globe — isolated Three.js module. A slowly drifting line globe
+   with the payment corridors; static under prefers-reduced-motion.
+   window.RelayGlobe.setState / setVolume are accepted and ignored.
    Falls back to the inline SVG if WebGL or the CDN is unavailable. */
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
 function webglAvailable() {
   try {
@@ -18,7 +18,6 @@ function initGlobe() {
 
   const D = Math.PI / 180;
   const BLUE = new THREE.Color('#0E2A47');
-  const TEAL = new THREE.Color('#16788A');
   const BG = new THREE.Color('#F6F6F3');
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -86,9 +85,10 @@ function initGlobe() {
     spin.add(m);
   });
 
-  // Corridor arcs
+  // Corridor arcs, drawn once at a fixed colour and opacity.
   const SEG = 96;
-  const arcs = ROUTES.map(([a, b]) => {
+  const arcMat = new THREE.LineBasicMaterial({ color: BLUE, transparent: true, opacity: 0.5 });
+  ROUTES.forEach(([a, b]) => {
     const va = vec(...CITIES[a]).normalize(), vb = vec(...CITIES[b]).normalize();
     const th = va.angleTo(vb), s = Math.sin(th), pts = [];
     for (let i = 0; i <= SEG; i++) {
@@ -97,40 +97,13 @@ function initGlobe() {
       p.multiplyScalar(1 + Math.sin(Math.PI * t) * (0.03 + th * 0.12));
       pts.push(p);
     }
-    const mat = new THREE.LineBasicMaterial({ color: BLUE.clone(), transparent: true, opacity: 0.55 });
-    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
-    spin.add(line);
-    return { line, mat };
+    spin.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), arcMat));
   });
 
-  // State
-  const SPEED = { idle: 0.06, listening: 0.005, thinking: 0.025, speaking: 0.035 }; // rad/s
-  let mode = 'idle', volume = 0, sVol = 0, speed = SPEED.idle;
-  let drawArc = 0, drawT = 0;
-
-  function applyArcs(dt) {
-    arcs.forEach(({ line, mat }, i) => {
-      if (mode === 'thinking') {
-        const active = i === drawArc;
-        mat.color.copy(BLUE);
-        mat.opacity = active ? 0.9 : 0.14;
-        const p = reduce.matches ? 1 : Math.min(drawT / 2.8, 1);
-        line.geometry.setDrawRange(0, active ? Math.max(2, Math.floor(p * (SEG + 1))) : SEG + 1);
-      } else if (mode === 'speaking') {
-        mat.color.copy(BLUE).lerp(TEAL, 0.5 + sVol * 0.5);
-        mat.opacity = 0.3 + sVol * 0.65;
-        line.geometry.setDrawRange(0, SEG + 1);
-      } else {
-        mat.color.copy(BLUE);
-        mat.opacity = mode === 'listening' ? 0.4 : 0.55;
-        line.geometry.setDrawRange(0, SEG + 1);
-      }
-    });
-    if (mode === 'thinking' && !reduce.matches) {
-      drawT += dt;
-      if (drawT > 3.8) { drawT = 0; drawArc = (drawArc + 1) % arcs.length; }
-    }
-  }
+  // Brand direction: calm and minimal, nothing flashy. The globe only drifts
+  // slowly at one constant speed (about one turn every five minutes). It no
+  // longer reacts to the call: the live-status text and dot carry that.
+  const DRIFT = 0.02; // rad/s
 
   function resize() {
     const w = mount.clientWidth, h = mount.clientHeight;
@@ -139,15 +112,12 @@ function initGlobe() {
     camera.aspect = w / h; camera.updateProjectionMatrix();
     renderOnce();
   }
-  function renderOnce() { applyArcs(0); renderer.render(scene, camera); }
+  function renderOnce() { renderer.render(scene, camera); }
 
   let raf = null, last = 0, visible = true;
   function frame(ts) {
     const dt = Math.min((ts - (last || ts)) / 1000, 0.05); last = ts;
-    speed += (SPEED[mode] - speed) * Math.min(dt * 2.5, 1);
-    spin.rotation.y += speed * dt;
-    sVol += (volume - sVol) * Math.min(dt * 10, 1);
-    applyArcs(dt);
+    spin.rotation.y += DRIFT * dt;
     renderer.render(scene, camera);
     raf = requestAnimationFrame(frame);
   }
@@ -159,21 +129,9 @@ function initGlobe() {
   document.addEventListener('visibilitychange', () => (document.hidden ? stop() : start()));
   reduce.addEventListener('change', () => { if (reduce.matches) { stop(); renderOnce(); } else start(); });
 
-  window.RelayGlobe = {
-    setState(s) {
-      if (!SPEED.hasOwnProperty(s) || s === mode) return;
-      if (s === 'thinking') { drawT = 0; drawArc = (drawArc + 1) % arcs.length; }
-      mode = s;
-      if (reduce.matches) { sVol = volume; renderOnce(); }
-    },
-    setVolume(v) {
-      volume = Math.max(0, Math.min(1, +v || 0));
-      if (reduce.matches) { sVol = volume; renderOnce(); }
-    }
-  };
+  // Kept so app.js's calls stay harmless; the globe no longer changes with the call state.
+  window.RelayGlobe = { setState() {}, setVolume() {} };
 
-  const init = window.__globeState || {};
-  if (init.state) window.RelayGlobe.setState(init.state);
   resize();
   host.classList.add('globe--webgl');
   start();
