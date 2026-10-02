@@ -114,11 +114,14 @@
     confirm: function () { var c = $('#cs-confirm').value; if (!c) return 'Confirm your password'; return c !== $('#cs-password').value ? "Passwords don't match" : ''; }
   }, async function () {
     signupErr.hidden = true;
-    var name = val('#cs-name'), email = val('#cs-email'), password = $('#cs-password').value;
+    var name = val('#cs-name'), company = val('#cs-company'), email = val('#cs-email'), password = $('#cs-password').value;
     try {
       // No sign-in yet: the account only works once the emailed link proves
       // this person owns the address (call history is matched by email).
-      await api('/api/customer/signup', { method: 'POST', body: { fullName: name, email: email, password: password } });
+      await api('/api/customer/signup', {
+        method: 'POST',
+        body: { fullName: name, companyName: company || undefined, email: email, password: password }
+      });
       $('[data-confirm-email]').textContent = email;
       show('check-email');
     } catch (e) {

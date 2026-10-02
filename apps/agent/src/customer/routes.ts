@@ -6,6 +6,7 @@ import { logAudit } from "../auditLog.js";
 import { sendEmail } from "../mailer.js";
 import { queueCallNote } from "../session/agentSession.js";
 import { secondsIntoCall } from "../transcriptTiming.js";
+import { ensureCustomerRecord } from "./customerRecord.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -209,6 +210,7 @@ function registerCustomerAuthRoutes(router: Router): void {
       const email = req.body?.email;
       const password = req.body?.password;
       const fullName = req.body?.fullName;
+      const companyName = req.body?.companyName;
 
       if (typeof email !== "string" || !EMAIL_RE.test(email.trim())) {
         res.status(400).json({ error: "invalid_email" });
@@ -255,6 +257,15 @@ function registerCustomerAuthRoutes(router: Router): void {
       if (accountError) {
         res.status(500).json({ error: "failed_to_create_account" });
         return;
+      }
+
+      // Best-effort: this only adds voice recognition on top of the website
+      // account above, which already works without it. Skipped with no name
+      // to attach (the form requires one; only a direct API call could omit
+      // it) — lookup_customer needs a name or company alongside the email.
+      if (cleanName) {
+        const cleanCompany = typeof companyName === "string" && companyName.trim().length > 0 ? companyName.trim() : null;
+        await ensureCustomerRecord(supabase, { email: cleanEmail, fullName: cleanName, companyName: cleanCompany });
       }
 
       try {
