@@ -956,12 +956,32 @@
       activeVapi.stop(); // 'call-end' moves the page to the ended state
     }, delay);
   }
+  // Both checks below re-read state.mode at the moment they fire, rather
+  // than trusting whatever it was when scheduled — end_call arrives as soon
+  // as the backend finishes streaming the reply text, which is usually
+  // before Vapi's TTS has even started playing it (synthesis + network
+  // lag), and a longer goodbye can still be playing well past either
+  // timer's delay. Neither may ever call stop() while genuinely speaking;
+  // speech-end's own 2000ms-after-the-last-word schedule (below) is the
+  // only thing allowed to end the call once it's actually finished talking.
   function requestHangup() {
     hangupPending = true;
-    // If the goodbye already finished, or speech-end never fires, still end.
-    if (state.mode !== 'speaking') scheduleHangup(2500);
+    clearTimeout(hangupTimer);
+    hangupTimer = setTimeout(function () {
+      if (!hangupPending) return;
+      if (state.mode === 'speaking') return; // speech-end will handle it
+      scheduleHangup(0);
+    }, 2500);
+    armHangupFallback();
+  }
+  // Absolute backstop in case speech-end never fires at all.
+  function armHangupFallback() {
     clearTimeout(hangupFallback);
-    hangupFallback = setTimeout(function () { scheduleHangup(0); }, 8000);
+    hangupFallback = setTimeout(function () {
+      if (!hangupPending) return;
+      if (state.mode === 'speaking') { armHangupFallback(); return; }
+      scheduleHangup(0);
+    }, 8000);
   }
 
   function bindVapiEvents(vapi) {
