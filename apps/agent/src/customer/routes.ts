@@ -92,7 +92,16 @@ async function findCustomerConversationIds(supabase: SupabaseClient, email: stri
     if (e.conversation_id) ids.add(e.conversation_id);
   });
 
-  return Array.from(ids);
+  if (ids.size === 0) return [];
+  // Eval runs (scripts/run-evals.ts, call ids "eval-…") verify as the seed
+  // customers. They're test traffic, not calls the customer made, so they
+  // stay out of the customer's history (staff and the database keep them).
+  const { data: realCalls } = await supabase
+    .from("conversations")
+    .select("conversation_id")
+    .in("conversation_id", Array.from(ids))
+    .not("vapi_call_id", "like", "eval-%");
+  return (realCalls ?? []).map((c: { conversation_id: string }) => c.conversation_id);
 }
 
 // A call's own final_status is fixed when it ends, but the case it opened

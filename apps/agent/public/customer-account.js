@@ -164,7 +164,8 @@
       '<span class="call-transcript__text">' + esc(t.text) + '</span></li>';
   }
   function rowHTML(call, i) {
-    var badge = STATUS_BADGE[call.status] || STATUS_BADGE.in_progress;
+    // An unknown status is a finished call, never "in progress".
+    var badge = STATUS_BADGE[call.status] || STATUS_BADGE.abandoned;
     var summary = call.summary || 'Call with RelayPay support';
     return '<li class="history-item" data-index="' + i + '">' +
       '<button class="history-row" type="button" aria-expanded="false" aria-controls="history-detail-' + i + '">' +
