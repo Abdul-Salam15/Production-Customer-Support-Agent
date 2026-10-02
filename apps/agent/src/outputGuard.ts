@@ -93,11 +93,27 @@ export class OutputGuard {
   // A watched pattern can only be missed if part of it was flushed before
   // the rest arrived, so the held-back tail must be at least as long as the
   // longest pattern this call could produce.
-  private readonly holdBack: number;
+  private holdBack: number;
 
   constructor(private readonly ctx: GuardContext) {
+    this.holdBack = OutputGuard.holdBackFor(ctx);
+  }
+
+  private static holdBackFor(ctx: GuardContext): number {
     const longestPhrase = Math.max(0, ...ctx.internalPhrases.map((phrase) => phrase.length));
-    this.holdBack = Math.max(EMAIL_HOLD_BACK, AMOUNT_HOLD_BACK, longestPhrase) + HOLD_BACK_MARGIN;
+    return Math.max(EMAIL_HOLD_BACK, AMOUNT_HOLD_BACK, longestPhrase) + HOLD_BACK_MARGIN;
+  }
+
+  // A caller can be verified partway through a turn ("I'm Amina from
+  // CapeCloud, amina@…, about TXN-9004" → lookup_customer, then
+  // lookup_transaction, in one reply). The context was built before that, so
+  // without this the rest of the turn was judged as unverified: the reply
+  // tripped the guard and the caller heard nothing, not even the ticket
+  // reference. Text already released was checked under the stricter rules.
+  markVerified(internalPhrases: string[]): void {
+    this.ctx.isVerified = true;
+    this.ctx.internalPhrases = [...this.ctx.internalPhrases, ...internalPhrases];
+    this.holdBack = OutputGuard.holdBackFor(this.ctx);
   }
 
   push(deltaText: string): string {

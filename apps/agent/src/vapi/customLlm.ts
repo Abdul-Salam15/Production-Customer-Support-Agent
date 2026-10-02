@@ -200,8 +200,9 @@ function buildOutcomeEvent(
               support_summary: result.support_summary,
               estimated_arrival: result.estimated_arrival,
               past_estimated_arrival: result.past_estimated_arrival,
-              amount: isVerified ? result.amount : null,
-              currency: isVerified ? result.currency : null,
+              // Shown on the verified caller's own screen, never spoken.
+              amount: isVerified ? (result.internal as { amount?: unknown } | undefined)?.amount ?? null : null,
+              currency: isVerified ? (result.internal as { currency?: unknown } | undefined)?.currency ?? null : null,
             },
           },
         };
@@ -425,6 +426,10 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
               const toolName = pendingToolUses.get(toolResult.tool_use_id);
               if (!toolName) continue;
               const parsed = tryParseToolResult(toolResult.content);
+              if (toolName === "lookup_customer" && parsed?.found === true) {
+                const internal = parsed.internal as { support_notes?: string | null } | undefined;
+                guard.markVerified(extractInternalPhrases(internal?.support_notes));
+              }
               const outcomeEvent = buildOutcomeEvent(toolName, parsed, guardContext.isVerified);
               if (outcomeEvent?.type === "outcome" && outcomeEvent.card?.kind === "account_verified") {
                 // Not awaited: the extra lookup must not hold up the spoken reply.

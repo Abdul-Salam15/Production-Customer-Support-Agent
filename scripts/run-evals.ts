@@ -593,6 +593,10 @@ async function runAttempt(s: Scenario & { run: NonNullable<Scenario["run"]> }, a
   }
 
   const o = await observe(call);
+  // Every scenario: the caller heard something each turn. The rows a turn
+  // writes can all be correct while the reply itself was silenced.
+  checks.add("every reply was spoken", call.replies.every((r) => r.trim().length > 0));
+  checks.add("output guard never blocked a reply", !o.eventTypes.includes("output_guard_blocked"));
   if (o.conversationId) {
     // Ended in the database first, so closing the session below finds the
     // call already finalized and sends no call-summary email.

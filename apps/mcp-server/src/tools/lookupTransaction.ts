@@ -51,14 +51,19 @@ async function handle(args: LookupTransactionArgs, ctx: ToolContext): Promise<Re
     found: true,
     transaction_id: data.transaction_id,
     customer_id: data.customer_id,
-    amount: data.amount,
-    currency: data.currency,
     type: data.transaction_type,
     status: data.status,
     estimated_arrival: data.estimated_arrival,
     support_summary: data.support_summary,
     past_estimated_arrival: isPastEstimatedArrival(data.estimated_arrival),
     recommended_action: recommendedActionFor(data.status),
+    // The KB: "RelayPay does not share sensitive account information through
+    // automated or voice-based systems." The amount is for case summaries
+    // staff read, never for the caller to hear.
+    internal: {
+      amount: data.amount,
+      currency: data.currency,
+    },
   };
 }
 
