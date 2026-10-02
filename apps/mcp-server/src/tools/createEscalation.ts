@@ -10,6 +10,7 @@ import { logAudit } from "../lib/auditLog.js";
 import { computePriority, confirmSignals } from "../lib/priority.js";
 import { resolveLinkedRecords } from "../lib/linkedRecords.js";
 import { spokenCallbackTime } from "../lib/spokenTime.js";
+import { recordConversationEvent } from "../lib/conversationEvents.js";
 
 const inputShape = {
   ticket_id: z.string().optional(),
@@ -273,6 +274,12 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
   if (error) throw new Error(`escalations insert failed: ${error.message}`);
 
   void logAudit("case", `New ${priority}-priority ${args.category} escalation created (${escalationId}) — ${basis}.`);
+  await recordConversationEvent(
+    conversationId,
+    "escalation_created",
+    `${priority}-priority ${args.category} escalation ${escalationId} created; specialist callback ${preferredTime ? `requested for ${preferredTime}` : "requested"}.`,
+    { escalation_id: escalationId, category: args.category, priority }
+  );
 
   // Not awaited: notifyEscalationCreated already never throws (internally
   // Promise.allSettled'd), but a slow/hanging Gmail connection must not add

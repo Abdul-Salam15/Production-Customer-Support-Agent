@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
@@ -26,22 +27,50 @@ interface MatchRow {
 // clean gap. 0.6 sits comfortably in the middle.
 const SUFFICIENT_CONTEXT_THRESHOLD = 0.6;
 
-async function handle(args: SearchKnowledgeBaseArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
-  const supabase = getSupabaseClient();
-
+async function searchOnce(supabase: SupabaseClient, text: string): Promise<MatchRow[]> {
   const { data: embedData, error: embedError } = await supabase.functions.invoke("embed-kb", {
-    body: { text: args.query },
+    body: { text },
   });
   if (embedError) throw new Error(`embed-kb failed: ${embedError.message}`);
 
   const { data, error } = await supabase.rpc("match_kb_chunks", {
     query_embedding: embedData.embedding,
-    query_text: args.query,
+    query_text: text,
     match_count: 3,
   });
   if (error) throw new Error(`match_kb_chunks failed: ${error.message}`);
+  return (data ?? []) as MatchRow[];
+}
 
-  const rows = (data ?? []) as MatchRow[];
+// What the caller actually said this turn (written by the agent backend).
+async function currentUtterance(supabase: SupabaseClient, conversationId: string | null): Promise<string | null> {
+  if (!conversationId) return null;
+  const { data } = await supabase
+    .from("conversations")
+    .select("current_utterance")
+    .eq("conversation_id", conversationId)
+    .maybeSingle();
+  const text = (data?.current_utterance as string | null | undefined)?.trim();
+  return text && text.length >= 8 ? text : null;
+}
+
+async function handle(args: SearchKnowledgeBaseArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
+  const supabase = getSupabaseClient();
+
+  // Searches with the model's query and, in parallel, the caller's own
+  // words, then keeps each chunk's best score. The model rewrites questions
+  // before searching, and a rewrite can miss the article the caller's words
+  // match ("guarantee my payout by 9am" -> "payout timing" missed "Can
+  // RelayPay Guarantee Payment Timelines?").
+  const utterance = await currentUtterance(supabase, ctx.conversationId);
+  const queries = utterance && utterance.toLowerCase() !== args.query.toLowerCase() ? [args.query, utterance] : [args.query];
+  const results = await Promise.all(queries.map((q) => searchOnce(supabase, q)));
+  const best = new Map<number, MatchRow>();
+  for (const row of results.flat()) {
+    const seen = best.get(row.id);
+    if (!seen || row.combined_score > seen.combined_score) best.set(row.id, row);
+  }
+  const rows = [...best.values()].sort((a, b) => b.combined_score - a.combined_score).slice(0, 3);
   const topScore = rows.length > 0 ? rows[0].combined_score : 0;
   const sufficientContext = topScore >= SUFFICIENT_CONTEXT_THRESHOLD;
 
@@ -57,7 +86,7 @@ async function handle(args: SearchKnowledgeBaseArgs, ctx: ToolContext): Promise<
     .from("retrieval_logs")
     .insert({
       conversation_id: ctx.conversationId,
-      query: args.query,
+      query: queries.join(" || "),
       chunk_ids: rows.map((row) => String(row.id)),
       source_titles: chunks.map((chunk) => chunk.source_title),
       source_summaries: chunks.map((chunk) => chunk.source_summary),

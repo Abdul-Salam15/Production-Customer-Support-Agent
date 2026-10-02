@@ -7,6 +7,7 @@ import { logAudit } from "../lib/auditLog.js";
 import { getVerifiedCustomerId } from "../lib/verification.js";
 import { computePriority, confirmSignals, normalizeCategory } from "../lib/priority.js";
 import { resolveLinkedRecords } from "../lib/linkedRecords.js";
+import { recordConversationEvent } from "../lib/conversationEvents.js";
 
 // Priority is not an input: it's computed server-side (lib/priority.ts)
 // from the category and the caller signals below.
@@ -138,6 +139,11 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
   if (error) throw new Error(`support_tickets insert failed: ${error.message}`);
 
   void logAudit("case", `New ${priority}-priority support ticket created (${ticketId}) — ${basis}.`);
+  await recordConversationEvent(conversationId, "ticket_created", `${priority}-priority support ticket ${ticketId} created: ${args.summary}`, {
+    ticket_id: ticketId,
+    category: normalizeCategory(args.category),
+    priority,
+  });
 
   return { ticket_id: ticketId, status: "open", priority };
 }

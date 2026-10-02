@@ -54,6 +54,9 @@ app.get("/api/config", (_req, res) => {
 // Cloudflare front end, which some monitors misjudge as unbounded/"too
 // large" and flag as a failure — a plain-text response avoids that.
 app.get("/health", (_req, res) => {
+  // Which model is answering, so eval runs record what they measured
+  // (Haiku vs Sonnet runs are otherwise indistinguishable).
+  res.setHeader("x-agent-model", getEnv().ANTHROPIC_MODEL);
   res.status(200).type("text/plain").send("ok");
 });
 

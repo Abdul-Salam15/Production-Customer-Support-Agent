@@ -14,6 +14,7 @@
 //   npm run evals -- --url https://agent-backend-xxxx.onrender.com
 //   npm run evals -- --only 4,6                     # a subset
 //   npm run evals -- --keep                         # keep the cases it creates
+//   npm run evals -- --runs 1                       # one attempt per scenario (default 3)
 //
 // Needs VAPI_PRIVATE_KEY, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY — read
 // from apps/agent/.env, or from the environment (which wins). They must be
@@ -36,6 +37,10 @@ function argValue(name: string): string | undefined {
 const BASE_URL = (argValue("url") ?? process.env.EVAL_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const ONLY = argValue("only")?.split(",").map((n) => Number(n.trim()));
 const KEEP = process.argv.includes("--keep");
+// The model is non-deterministic, so one pass proves little: each scenario
+// runs RUNS times and is reported as a pass rate. A scenario only counts as
+// passing when every attempt passed.
+const RUNS = Math.max(1, Number(argValue("runs") ?? 3));
 const TURN_TIMEOUT_MS = 120_000;
 
 function requireEnv(name: string): string {
@@ -49,6 +54,7 @@ function requireEnv(name: string): string {
 const VAPI_PRIVATE_KEY = requireEnv("VAPI_PRIVATE_KEY");
 const supabase = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
 
+let MODEL = "unknown";
 const RUN_ID = `eval-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 
 // ---------- Talking to the backend ----------
@@ -84,7 +90,7 @@ class EvalCall {
   readonly history: Message[] = [];
   readonly replies: string[] = [];
 
-  constructor(scenario: number) {
+  constructor(scenario: string) {
     this.callId = `${RUN_ID}-s${scenario}`;
   }
 
@@ -149,6 +155,7 @@ interface Observed {
   tickets: { ticket_id: string; category: string; priority: string }[];
   escalations: { escalation_id: string; category: string; priority: string }[];
   answerTypes: (string | null)[];
+  eventTypes: string[];
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,10 +170,10 @@ async function observe(call: EvalCall): Promise<Observed> {
     .maybeSingle();
   const conversationId = conv?.conversation_id ?? null;
   if (!conversationId) {
-    return { conversationId, tools: [], toolNames: [], tickets: [], escalations: [], answerTypes: [] };
+    return { conversationId, tools: [], toolNames: [], tickets: [], escalations: [], answerTypes: [], eventTypes: [] };
   }
 
-  const [{ data: tools }, { data: tickets }, { data: escalations }, { data: turns }] = await Promise.all([
+  const [{ data: tools }, { data: tickets }, { data: escalations }, { data: turns }, { data: events }] = await Promise.all([
     supabase
       .from("tool_calls")
       .select("tool_name, status, input_summary, result_summary")
@@ -180,6 +187,7 @@ async function observe(call: EvalCall): Promise<Observed> {
       .eq("conversation_id", conversationId)
       .eq("role", "agent")
       .order("turn_index", { ascending: true }),
+    supabase.from("conversation_events").select("event_type").eq("conversation_id", conversationId),
   ]);
 
   const toolRows = (tools ?? []) as ToolCallRow[];
@@ -190,6 +198,7 @@ async function observe(call: EvalCall): Promise<Observed> {
     tickets: tickets ?? [],
     escalations: escalations ?? [],
     answerTypes: ((turns ?? []) as { answer_type: string | null }[]).map((t) => t.answer_type),
+    eventTypes: ((events ?? []) as { event_type: string }[]).map((e) => e.event_type),
   };
 }
 
@@ -214,6 +223,9 @@ class Checks {
   noToolErrors(o: Observed): void {
     const failed = o.tools.filter((t) => t.status !== "success").map((t) => t.tool_name);
     this.add(failed.length ? `tool errors: ${failed.join(", ")}` : "no tool errors", failed.length === 0);
+  }
+  eventLogged(o: Observed, type: string): void {
+    this.add(`logged a ${type} event`, o.eventTypes.includes(type));
   }
   replyMatches(label: string, text: string, re: RegExp): void {
     this.add(label, re.test(text));
@@ -313,7 +325,7 @@ const SCENARIOS: Scenario[] = [
     run: async (call, c) => {
       const first = await call.say("What is happening with payout PAY-7002?");
       let o = await observe(call);
-      c.called(o, "lookup_payout");
+      c.add("looked up the payout on the first turn, without gatekeeping", o.toolNames.includes("lookup_payout"));
       c.replyMatches("identifies the review", first, /review/i);
       await call.say("Yes, please get a specialist to call me back.");
       o = await observe(call);
@@ -323,7 +335,7 @@ const SCENARIOS: Scenario[] = [
       o = await observe(call);
       c.add("escalation record created", o.escalations.length === 1);
       c.replyMatches("reads back a reference", confirm, /R-P|RP/i);
-      c.called(o, "log_conversation_event");
+      c.eventLogged(o, "escalation_created");
       c.noToolErrors(o);
     },
   },
@@ -342,7 +354,7 @@ const SCENARIOS: Scenario[] = [
       c.called(o, "lookup_customer");
       c.called(o, "lookup_transaction");
       c.add("support ticket stored", o.tickets.length === 1);
-      c.called(o, "log_conversation_event");
+      c.eventLogged(o, "ticket_created");
       c.noToolErrors(o);
     },
   },
@@ -359,13 +371,14 @@ const SCENARIOS: Scenario[] = [
         await call.say("Yes, please arrange a callback with a specialist.");
         o = await observe(call);
       }
-      c.called(o, "request_contact_details");
+      c.add("showed the form by the second turn", o.toolNames.includes("request_contact_details"));
+      c.add("didn't demand verification for a callback", !o.toolNames.includes("lookup_customer"));
       await call.submitContactForm("Daniel Mwangi", "daniel@nairobiops.example", CALLBACK);
       await call.say("I've sent my callback details using the on-screen form.");
       o = await observe(call);
       c.add("escalation record created", o.escalations.length === 1);
       c.add("escalation is high priority", o.escalations[0]?.priority === "high");
-      c.called(o, "log_conversation_event");
+      c.eventLogged(o, "escalation_created");
       c.noToolErrors(o);
     },
   },
@@ -458,15 +471,44 @@ interface Result {
   pass: boolean | null;
   actual: string;
   notes: string;
+  passed: number;
+  runs: number;
+}
+
+interface Attempt {
+  pass: boolean;
+  actual: string;
+  notes: string;
 }
 
 async function runScenario(s: Scenario): Promise<Result> {
-  if (!s.run) return { scenario: s, pass: null, actual: "Manual check", notes: s.manualNote ?? "" };
+  if (!s.run) return { scenario: s, pass: null, actual: "Manual check", notes: s.manualNote ?? "", passed: 0, runs: 0 };
+  const attempts: Attempt[] = [];
+  const run = s.run;
+  for (let i = 1; i <= RUNS; i++) attempts.push(await runAttempt({ ...s, run }, i));
+  const passed = attempts.filter((a) => a.pass).length;
+  const failures = attempts
+    .map((a, i) => (a.pass ? null : `run ${i + 1}: ${a.notes}`))
+    .filter((x): x is string => x !== null);
+  // Show a failing attempt's transcript when there is one — that's the one
+  // worth reading.
+  const shown = attempts.find((a) => !a.pass) ?? attempts[attempts.length - 1];
+  return {
+    scenario: s,
+    pass: passed === attempts.length,
+    actual: shown.actual,
+    notes: failures.length ? failures.join(" · ") : `All checks passed in ${attempts.length}/${attempts.length} runs`,
+    passed,
+    runs: attempts.length,
+  };
+}
+
+async function runAttempt(s: Scenario & { run: NonNullable<Scenario["run"]> }, attempt: number): Promise<Attempt> {
 
   if (!(await waitForBackend())) {
-    return { scenario: s, pass: false, actual: "Not run", notes: "Backend unavailable (/health not OK for 90s)" };
+    return { pass: false, actual: "Not run", notes: "Backend unavailable (/health not OK for 90s)" };
   }
-  const call = new EvalCall(s.n);
+  const call = new EvalCall(`${s.n}-${attempt}`);
   const checks = new Checks();
   let error: string | null = null;
   try {
@@ -495,7 +537,7 @@ async function runScenario(s: Scenario): Promise<Result> {
     .filter(Boolean)
     .join(" ");
   const notes = error ? `Error: ${error}` : failed.length ? `Failed: ${failed.join("; ")}` : `All ${checks.list.length} checks passed`;
-  return { scenario: s, pass: error ? false : checks.passed, actual, notes };
+  return { pass: error ? false : checks.passed, actual, notes };
 }
 
 function escapeCell(text: string): string {
@@ -508,16 +550,17 @@ function writeEvidence(results: Result[]): void {
   const lines = [
     "# Testing evidence",
     "",
-    `Run \`${RUN_ID}\` against \`${BASE_URL}\` — ${passed}/${automated} automated scenarios passed.`,
+    `Run \`${RUN_ID}\` against \`${BASE_URL}\` — ${passed}/${automated} automated scenarios passed in every one of ${RUNS} attempts.`,
+    `Model: \`${MODEL}\`.`,
     "Generated by `scripts/run-evals.ts` (text mode through the real backend, MCP tools, and Supabase); the same rows are in the `evaluations` table under this run_id.",
     "",
-    "| # | Scenario | Expected behavior | Actual behavior | Result | Notes |",
-    "|---|---|---|---|---|---|",
+    "| # | Scenario | Expected behavior | Actual behavior | Result | Pass rate | Notes |",
+    "|---|---|---|---|---|---|---|",
     ...results.map(
       (r) =>
         `| ${r.scenario.n} | ${escapeCell(r.scenario.title)} | ${escapeCell(r.scenario.expected)} | ${escapeCell(r.actual)} | ${
           r.pass === null ? "Manual" : r.pass ? "Pass" : "Fail"
-        } | ${escapeCell(r.notes)} |`
+        } | ${r.runs ? `${r.passed}/${r.runs}` : "—"} | ${escapeCell(r.notes)} |`
     ),
     "",
   ];
@@ -530,23 +573,25 @@ async function main(): Promise<void> {
     console.error(`Agent backend not reachable at ${BASE_URL} — start it (npm run dev -w apps/agent) or pass --url.`);
     process.exit(1);
   }
+  MODEL = health.headers.get("x-agent-model") ?? "unknown (backend predates model reporting)";
+  console.log(`Model: ${MODEL}`);
 
-  console.log(`Run ${RUN_ID} against ${BASE_URL}${KEEP ? " (keeping created cases)" : ""}\n`);
+  console.log(`Run ${RUN_ID} against ${BASE_URL}, ${RUNS} attempt(s) per scenario${KEEP ? " (keeping created cases)" : ""}\n`);
   const results: Result[] = [];
   for (const s of SCENARIOS.filter((x) => !ONLY || ONLY.includes(x.n))) {
     process.stdout.write(`Scenario ${s.n}: ${s.title} … `);
     const result = await runScenario(s);
     results.push(result);
-    console.log(result.pass === null ? "MANUAL" : result.pass ? "PASS" : "FAIL");
+    console.log(result.pass === null ? "MANUAL" : `${result.pass ? "PASS" : "FAIL"} (${result.passed}/${result.runs})`);
     if (result.pass === false) console.log(`   ${result.notes}`);
 
     const { error } = await supabase.from("evaluations").insert({
-      run_id: RUN_ID,
+      run_id: `${RUN_ID} (${MODEL})`,
       scenario: `${s.n}. ${s.title}`,
       expected_behavior: s.expected,
       actual_behavior: result.actual,
       pass: result.pass,
-      notes: result.notes,
+      notes: result.runs ? `${result.passed}/${result.runs} runs passed. ${result.notes}` : result.notes,
     });
     if (error) console.error(`   (could not write evaluations row: ${error.message})`);
   }

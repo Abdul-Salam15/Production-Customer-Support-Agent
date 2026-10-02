@@ -9,6 +9,7 @@ import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext }
 import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
 import { speakReferences } from "./spokenReferences.js";
 import { NarrationFilter } from "./narrationFilter.js";
+import { PreToolGate } from "./preToolGate.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -311,6 +312,15 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   // Usually already started by the "in-progress" status-update webhook, so
   // this resolves immediately instead of paying for SDK startup here.
   const agent = await getOrCreateCallAgent(callId);
+  // search_knowledge_base also searches with the caller's own words (the
+  // model's rewritten query sometimes misses), so store them for this turn.
+  await getSupabaseClient()
+    .from("conversations")
+    .update({ current_utterance: userMessage.content.slice(0, 1000) })
+    .eq("conversation_id", agent.conversationId)
+    .then(({ error }) => {
+      if (error) console.error("customLlm: failed to store current utterance", error.message);
+    });
   const utterance = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
   const notes = agent.takeNotes();
   const prompt = notes.length > 0 ? `${notes.join("\n")}\n\n${utterance}` : utterance;
@@ -360,6 +370,7 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     spokenSoFar += out;
     writeSseChunk(res, modelName, chunkId, out);
   };
+  const gate = new PreToolGate(speak);
   const rememberTag = () => {
     const tag = tagBuffer.getTag();
     if (tag.answerType && !streamedTag.answerType) streamedTag = tag;
@@ -376,16 +387,19 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
             tagBuffer = createTagStrippingBuffer();
             narration.reset();
             needsSeparator = true;
+            gate.startText();
+          } else if (event.type === "content_block_start" && event.content_block.type === "tool_use") {
+            // Text written just before a tool call is a lead-in, and often
+            // a wrong one ("the docs don't cover that") — never spoken.
+            gate.startTool();
           } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            speak(narration.push(guard.push(tagBuffer.push(event.delta.text))));
+            gate.push(narration.push(guard.push(tagBuffer.push(event.delta.text))));
           } else if (event.type === "content_block_stop") {
-            // A finished block can be checked in full, so release it now
-            // instead of holding its tail back until text after the next
-            // tool call arrives — the caller hears "Let me check that" while
-            // the tool runs, not after.
-            speak(narration.push(guard.push(tagBuffer.flush())));
-            speak(narration.push(guard.flushRemaining()));
-            speak(narration.flush());
+            // Run the block's tail through the guard now; the gate decides
+            // whether it's spoken once we see what comes next.
+            gate.push(narration.push(guard.push(tagBuffer.flush())));
+            gate.push(narration.push(guard.flushRemaining()));
+            gate.push(narration.flush());
             rememberTag();
           }
         } else if (message.type === "assistant") {
@@ -432,9 +446,10 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     }
 
     if (!res.writableEnded) {
-      speak(narration.push(guard.push(tagBuffer.flush())));
-      speak(narration.push(guard.flushRemaining()));
-      speak(narration.flush());
+      gate.push(narration.push(guard.push(tagBuffer.flush())));
+      gate.push(narration.push(guard.flushRemaining()));
+      gate.push(narration.flush());
+      gate.flush();
       writeSseDone(res, modelName, chunkId);
     }
     rememberTag();
@@ -460,6 +475,21 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
         turnStartedAt,
         firstSpokenAt ?? new Date()
       );
+      // Recorded by the server, not left to the model: a decline is what the
+      // support team reviews to find gaps in the knowledge base.
+      if (tag.answerType === "decline") {
+        void getSupabaseClient()
+          .from("conversation_events")
+          .insert({
+            conversation_id: conversationId,
+            event_type: "declined",
+            summary: `Declined: "${userMessage.content.slice(0, 200)}"`,
+            metadata: { source: "server" },
+          })
+          .then(({ error }) => {
+            if (error) console.error("customLlm: failed to record decline event", error.message);
+          });
+      }
     }
 }
 

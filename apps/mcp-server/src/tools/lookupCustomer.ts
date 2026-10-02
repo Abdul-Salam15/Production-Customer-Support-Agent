@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { findVerifiedCustomer, type CustomerRecord } from "../lib/verification.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
+import { recordConversationEvent } from "../lib/conversationEvents.js";
 
 const inputShape = {
   customer_id: z.string().optional(),
@@ -41,6 +42,8 @@ async function handle(args: LookupCustomerArgs, ctx: ToolContext): Promise<Recor
   });
 
   if (!match) {
+    // Never records which details were given — only that verification failed.
+    await recordConversationEvent(ctx.conversationId, "verification_failed", "Caller could not be verified.");
     // Enumeration guard: never confirm the company exists, never say which
     // field was wrong.
     return { found: false };
