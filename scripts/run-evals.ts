@@ -243,6 +243,9 @@ interface Scenario {
   title: string;
   expected: string;
   run?: (call: EvalCall, checks: Checks) => Promise<void>;
+  // For a scenario checked by hand: what was observed, and its result.
+  manualActual?: string;
+  manualResult?: string;
   manualNote?: string;
 }
 
@@ -476,10 +479,36 @@ const SCENARIOS: Scenario[] = [
     n: 9,
     title: "Voice flow",
     expected: "Vapi captures speech, the backend responds, Vapi speaks the reply, Supabase logs the conversation and tool calls.",
+    manualActual:
+      "Real browser call on the deployed page, 2 Oct 2026 16:25 UTC (conversation 288c003b-e52a-44ea-8e09-0a1c1f23a986). " +
+      "Caller said \"My name is Amaro Accra from LagosLedger\" (speech recognition misheard Amara Okafor). " +
+      "Agent asked for the account email; \"Amara at LagosLedger dot example\" verified via lookup_customer (CUS-1001, 564 ms). " +
+      "Caller said \"TXN 9 0 0 1\"; lookup_transaction(TXN-9001, 447 ms). Spoken reply: \"Our records show that transaction " +
+      "is still processing, with an estimated arrival of October 4th, 2026… nothing looks wrong at this point.\" No amount spoken. " +
+      "Caller said \"Nothing for now.\" and the agent ended the call.",
+    manualResult: "Pass (manual)",
     manualNote:
-      "Not covered by text mode; checked by hand with a real voice call on the deployed page (2 Oct 2026), " +
-      "which worked end to end.",
+      "Supabase rows for that conversation: 8 conversation_turns (agent turns tagged answer/clarify with confidence), " +
+      "2 tool_calls (email masked), 1 conversation_event (agent_ended_call). No knowledge-base question was asked, so " +
+      "no retrieval row; retrieval is shown by scenarios 1 and 8.",
   },
+];
+
+// Appended to docs/testing-evidence.md on every run, so a reader comparing
+// the table with assets/test-scenarios.md sees why Scenarios 3 and 4 differ.
+const DEPARTURES_NOTE = [
+  "## Deliberate departures from the test scenarios",
+  "",
+  "Two scenarios in `assets/test-scenarios.md` are handled more strictly than written. Both still use the MCP lookup tool, after the caller is verified.",
+  "",
+  '- **Scenario 3** ("I am Amara from LagosLedger. Can you check my account?"): a name and company don\'t verify a caller, because both are public. Anyone who knows Amara works at LagosLedger could otherwise act on her account. The agent asks for the email on the account, then verifies with `lookup_customer`, and shares only the plan and account status.',
+  '- **Scenario 4** ("Can you check transaction TXN-9001?"): a reference alone doesn\'t prove the caller owns it, and even a status reveals something about someone\'s account. The knowledge base says: "RelayPay does not share sensitive account information through automated or voice-based systems." The agent verifies first, then uses `lookup_transaction` and gives the customer-safe status. The lookup tools enforce this themselves: they refuse before querying, so an unverified caller can\'t even learn whether a reference exists.',
+  "- **Amounts and recipient names are never spoken**, even to verified callers, for the same reason. They go into the written case summary for staff.",
+  "",
+  "## Tracing a result to its records",
+  "",
+  "Each scenario's conversation is kept in `conversations` (run with `--keep`), with a `vapi_call_id` of `<run id>-s<scenario>-<attempt>`. Its turns, tool calls, retrievals, tickets and escalations link to it by `conversation_id`.",
+  "",
 ];
 
 // ---------- Cleanup ----------
@@ -557,7 +586,7 @@ interface Attempt {
 }
 
 async function runScenario(s: Scenario): Promise<Result> {
-  if (!s.run) return { scenario: s, pass: null, actual: "Manual check", notes: s.manualNote ?? "", passed: 0, runs: 0 };
+  if (!s.run) return { scenario: s, pass: null, actual: s.manualActual ?? "Manual check", notes: s.manualNote ?? "", passed: 0, runs: 0 };
   const attempts: Attempt[] = [];
   const run = s.run;
   for (let i = 1; i <= RUNS; i++) attempts.push(await runAttempt({ ...s, run }, i));
@@ -638,10 +667,11 @@ function writeEvidence(results: Result[]): void {
     ...results.map(
       (r) =>
         `| ${r.scenario.n} | ${escapeCell(r.scenario.title)} | ${escapeCell(r.scenario.expected)} | ${escapeCell(r.actual)} | ${
-          r.pass === null ? "Manual" : r.pass ? "Pass" : "Fail"
+          r.pass === null ? (r.scenario.manualResult ?? "Manual") : r.pass ? "Pass" : "Fail"
         } | ${r.runs ? `${r.passed}/${r.runs}` : "—"} | ${escapeCell(r.notes)} |`
     ),
     "",
+    ...DEPARTURES_NOTE,
   ];
   writeFileSync(join(__dirname, "..", "docs", "testing-evidence.md"), lines.join("\n"));
 }

@@ -65,3 +65,50 @@ export function spokenCallbackTime(written: string | null | undefined): string |
   const zoneName = zone ? ZONES[zone.trim().toLowerCase()] ?? zone.trim() : "";
   return `${dayName} the ${ordinalWords(d)} of ${monthName} at ${timeWords(h, min)}${zoneName ? `, ${zoneName}` : ""}`;
 }
+
+// IANA zones for the abbreviations the contact form offers; UK time and ET
+// shift with daylight saving, so they're resolved through Intl, not a fixed offset.
+const ZONE_IDS: Record<string, string> = {
+  wat: "Africa/Lagos",
+  eat: "Africa/Nairobi",
+  cat: "Africa/Maputo",
+  sast: "Africa/Johannesburg",
+  gmt: "Etc/GMT",
+  "uk time": "Europe/London",
+  et: "America/New_York",
+};
+const MONTH_INDEX = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+// Minutes the zone is ahead of UTC at that instant.
+function zoneOffsetMinutes(timeZone: string, at: Date): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    }).formatToParts(at).map((p) => [p.type, p.value])
+  );
+  const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  return Math.round((asUtc - at.getTime()) / 60000);
+}
+
+// The same written time as an instant, for escalations.callback_at. It has no
+// year, so it's the first occurrence that isn't more than a day before
+// `reference` (when the case was created): callbacks are booked ahead.
+// Returns null for anything it can't parse, including an unknown zone.
+export function callbackInstant(written: string | null | undefined, reference: Date = new Date()): Date | null {
+  if (!written) return null;
+  const m = written.trim().match(/^[A-Za-z]{3}\w*,?\s+(\d{1,2})\s+([A-Za-z]{3})\w*,?\s+(\d{1,2}):(\d{2})\s*(.*)$/);
+  if (!m) return null;
+  const [, date, month, hh, mm, zone] = m;
+  const monthIndex = MONTH_INDEX.indexOf(month.toLowerCase());
+  const timeZone = ZONE_IDS[(zone || "wat").trim().toLowerCase()];
+  if (monthIndex < 0 || !timeZone) return null;
+
+  const toInstant = (year: number): Date => {
+    const wallAsUtc = Date.UTC(year, monthIndex, Number(date), Number(hh), Number(mm));
+    return new Date(wallAsUtc - zoneOffsetMinutes(timeZone, new Date(wallAsUtc)) * 60000);
+  };
+  const year = reference.getUTCFullYear();
+  const candidate = toInstant(year);
+  return candidate.getTime() < reference.getTime() - 24 * 60 * 60 * 1000 ? toInstant(year + 1) : candidate;
+}

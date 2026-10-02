@@ -40,6 +40,10 @@ Every reply is tagged with one of these paths and a confidence level. The tag is
 - **Priority is computed by the server,** from the category plus whether the caller is upset, money is overdue, or the account is restricted. Checks against the database can raise it but never lower it.
 - **Case references and callback times come from the tools.** The agent reads back the reference and time the tools return, and doesn't make them up.
 
+## Where we're stricter than the test scenarios
+
+Scenarios 3 and 4 expect an answer from a name and company, or from a bare transaction reference. Here, the agent first asks for the email on the account, and only then calls `lookup_customer` or `lookup_transaction`. A name, company or reference doesn't prove who's calling, and the knowledge base says RelayPay doesn't share sensitive account information through automated or voice systems. For the same reason, amounts and recipient names are never spoken, even after verification. The details are in [testing-evidence.md](testing-evidence.md).
+
 ## Things to try
 
 | Say | What happens |

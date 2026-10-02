@@ -59,8 +59,9 @@ npm run dev -w apps/mcp-server          # listens on PORT (default 3001), endpoi
 2. **Seed and ingest:**
    ```bash
    npm install
-   npm run seed        # customers, transactions, payouts
-   npm run ingest-kb   # knowledge base chunks + embeddings
+   npm run seed            # customers, transactions, payouts, exactly as in the CSVs
+   npm run refresh-dates   # moves TXN-9001/PAY-7001 (the one on-time example) forward to today
+   npm run ingest-kb       # knowledge base chunks + embeddings
    ```
 3. **Env files:** copy the sections of [.env.example](.env.example) into `apps/agent/.env` and `apps/mcp-server/.env`, and fill in real values. `MCP_SERVER_TOKEN` must match in both.
 4. **Start both services:**

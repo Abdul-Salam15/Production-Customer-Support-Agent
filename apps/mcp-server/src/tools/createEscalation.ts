@@ -9,7 +9,7 @@ import { sendEmail } from "../lib/mailer.js";
 import { logAudit } from "../lib/auditLog.js";
 import { computePriority, confirmSignals } from "../lib/priority.js";
 import { resolveLinkedRecords } from "../lib/linkedRecords.js";
-import { spokenCallbackTime } from "../lib/spokenTime.js";
+import { spokenCallbackTime, callbackInstant } from "../lib/spokenTime.js";
 import { recordConversationEvent } from "../lib/conversationEvents.js";
 
 const inputShape = {
@@ -265,6 +265,11 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     category: args.category,
     reason: args.reason,
     preferred_time: preferredTime,
+    // escalation-rules.md: "Call booked: yes or no" and the callback time.
+    // A callback is booked once a time is agreed; callback_at is that time
+    // as an instant when it's in the form's format, so the queue can sort by it.
+    call_booked: !!preferredTime,
+    callback_at: callbackInstant(preferredTime)?.toISOString() ?? null,
     related_transaction_id: linked.transactionId,
     related_payout_id: linked.payoutId,
     priority,
