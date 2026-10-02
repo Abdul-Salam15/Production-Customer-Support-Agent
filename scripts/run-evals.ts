@@ -58,6 +58,27 @@ interface Message {
   content: string;
 }
 
+// Render answers with a full HTML error page (502 while deploying or after a
+// crash); report the status, not the page.
+async function describeFailure(res: Response): Promise<string> {
+  const body = await res.text();
+  const looksHtml = /^\s*<(!doctype|html)/i.test(body);
+  const hint = res.status === 502 || res.status === 503 ? " — backend unavailable (deploying, or crashed/out of memory)" : "";
+  return `${res.status}${hint}${looksHtml ? "" : `: ${body.slice(0, 200)}`}`;
+}
+
+// Waits for /health before each scenario, so a backend that's restarting
+// fails one scenario clearly instead of every turn timing out.
+async function waitForBackend(maxWaitMs = 90_000): Promise<boolean> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    if (res?.ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  return false;
+}
+
 class EvalCall {
   readonly callId: string;
   readonly history: Message[] = [];
@@ -75,7 +96,7 @@ class EvalCall {
       body: JSON.stringify({ messages: this.history, stream: true, call: { id: this.callId } }),
       signal: AbortSignal.timeout(TURN_TIMEOUT_MS),
     });
-    if (!res.ok || !res.body) throw new Error(`chat/completions returned ${res.status}: ${await res.text()}`);
+    if (!res.ok || !res.body) throw new Error(`chat/completions returned ${await describeFailure(res)}`);
 
     let reply = "";
     let buffered = "";
@@ -108,7 +129,7 @@ class EvalCall {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name, email, callbackTime }),
     });
-    if (!res.ok) throw new Error(`contact submission returned ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`contact submission returned ${await describeFailure(res)}`);
   }
 }
 
@@ -436,6 +457,9 @@ interface Result {
 async function runScenario(s: Scenario): Promise<Result> {
   if (!s.run) return { scenario: s, pass: null, actual: "Manual check", notes: s.manualNote ?? "" };
 
+  if (!(await waitForBackend())) {
+    return { scenario: s, pass: false, actual: "Not run", notes: "Backend unavailable (/health not OK for 90s)" };
+  }
   const call = new EvalCall(s.n);
   const checks = new Checks();
   let error: string | null = null;
