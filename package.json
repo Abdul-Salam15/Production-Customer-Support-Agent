@@ -8,6 +8,7 @@
   "scripts": {
     "seed": "tsx supabase/seed/load-seed.ts",
     "refresh-dates": "tsx scripts/refresh-seed-dates.ts",
+    "configure-vapi-silence-hooks": "tsx scripts/configure-vapi-silence-hooks.ts",
     "ingest-kb": "tsx scripts/ingest-knowledge-base.ts",
     "evals": "tsx scripts/run-evals.ts"
   },

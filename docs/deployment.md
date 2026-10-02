@@ -286,6 +286,32 @@ URL — so the Custom LLM URL becomes
 
 ---
 
+## Part G.1 — Check in on a silent caller, then hang up
+
+The Custom LLM endpoint only runs when the caller speaks, so our own backend has no way to
+make the agent talk first. Vapi's own [assistant hooks](https://docs.vapi.ai/assistants/assistant-hooks)
+handle this instead, entirely on Vapi's side: after 10 seconds of silence the assistant asks
+"Are you still there?"; after 15 seconds (5 seconds later) it says a closing line and ends the
+call. One-time setup, against your real assistant:
+
+```bash
+VAPI_API_KEY='...' npm run configure-vapi-silence-hooks
+```
+
+`VAPI_API_KEY` is the Vapi account's own **Private API key** (Dashboard → API Keys) — not
+`VAPI_PRIVATE_KEY` from `apps/agent/.env`, which is a separate shared secret used only for the
+Custom LLM credential (Part C) and isn't valid for Vapi's own API. Never commit the real key;
+pass it only as an environment variable, and only to this one command.
+
+The script reads the assistant's current hooks first and only replaces the two it manages
+(matched by name), so anything else already configured there is left alone. Confirm it worked
+by printing the hooks it just set, or by checking the assistant in the dashboard.
+
+**You should see/hear:** start a call, go quiet, and the assistant should check in, then end
+the call if you stay quiet.
+
+---
+
 ## Part H — Final real-call verification
 
 1. Open the deployed `agent-backend` URL itself in a browser (the customer-facing web page is
