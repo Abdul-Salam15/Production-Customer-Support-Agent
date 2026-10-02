@@ -103,12 +103,12 @@ async function notifyEscalationCreated(args: {
 async function getStoredContactSubmission(
   supabase: SupabaseClient,
   conversationId: string | null
-): Promise<{ name: string; email: string } | null> {
+): Promise<{ name: string; email: string; callback_time: string | null } | null> {
   if (!conversationId) return null;
 
   const { data } = await supabase
     .from("contact_submissions")
-    .select("name, email")
+    .select("name, email, callback_time")
     .eq("conversation_id", conversationId)
     .maybeSingle();
 
@@ -119,12 +119,19 @@ async function resolveContactDetails(
   supabase: SupabaseClient,
   args: CreateEscalationArgs,
   conversationId: string | null
-): Promise<{ userName: string; userEmail: string }> {
+): Promise<{ userName: string; userEmail: string; preferredTime: string | null }> {
   // A value the customer typed and the server stored is authoritative; a
-  // value the model transcribed from speech is not.
+  // value the model transcribed from speech is not. That includes the
+  // callback time: the model's version is phrased for speech ("Friday the
+  // thirtieth of October at one oh-four in the morning, West Africa Time"),
+  // which is unreadable in the dashboard and emails.
   const stored = await getStoredContactSubmission(supabase, conversationId);
   if (stored) {
-    return { userName: stored.name, userEmail: stored.email };
+    return {
+      userName: stored.name,
+      userEmail: stored.email,
+      preferredTime: stored.callback_time ?? args.preferred_time ?? null,
+    };
   }
 
   const verifiedCustomerId = await getVerifiedCustomerId(supabase, conversationId);
@@ -139,11 +146,12 @@ async function resolveContactDetails(
       return {
         userName: args.user_name || customer.contact_name,
         userEmail: customer.contact_email,
+        preferredTime: args.preferred_time ?? null,
       };
     }
   }
 
-  return { userName: args.user_name, userEmail: args.user_email };
+  return { userName: args.user_name, userEmail: args.user_email, preferredTime: args.preferred_time ?? null };
 }
 
 // The model sometimes fills ticket_id / customer_id with values it made up
@@ -171,7 +179,7 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
   const supabase = getSupabaseClient();
   const conversationId = ctx.conversationId ?? args.conversation_id ?? null;
 
-  const { userName, userEmail } = await resolveContactDetails(supabase, args, conversationId);
+  const { userName, userEmail, preferredTime } = await resolveContactDetails(supabase, args, conversationId);
 
   if (!userName || userName.trim().length === 0) {
     return { status: "invalid", error: "missing_name" };
@@ -199,7 +207,7 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     user_email: userEmail,
     category: args.category,
     reason: args.reason,
-    preferred_time: args.preferred_time ?? null,
+    preferred_time: preferredTime,
     priority,
     status: "open",
   });
@@ -218,7 +226,7 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     reason: args.reason,
     userName,
     userEmail,
-    preferredTime: args.preferred_time,
+    preferredTime: preferredTime ?? undefined,
   });
 
   return {

@@ -126,7 +126,7 @@ interface ContactSubmissionRow {
 
 function customerOutcomeLines(outcome: FinalOutcome, callbackTime: string | null): string[] {
   if (outcome.escalation) {
-    const when = outcome.escalation.preferred_time ?? callbackTime;
+    const when = callbackTime ?? outcome.escalation.preferred_time;
     return [
       `A RelayPay specialist will follow up on your ${outcome.escalation.category} request.`,
       `Reference: ${outcome.escalation.escalation_id}`,
