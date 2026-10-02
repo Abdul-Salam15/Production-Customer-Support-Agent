@@ -12,14 +12,17 @@ import { logAudit } from "../auditLog.js";
 
 type FinalStatus = "resolved" | "ticket_created" | "escalated" | "abandoned";
 
-interface FinalOutcome {
+export interface FinalOutcome {
   status: FinalStatus;
   summary: string;
   escalation: { escalation_id: string; category: string; preferred_time: string | null } | null;
   ticket: { ticket_id: string; category: string } | null;
 }
 
-async function deriveFinalOutcome(conversationId: string): Promise<FinalOutcome> {
+// Exported for scripts/backfill-stuck-conversations.ts: the same outcome
+// logic finalizeCall uses, for conversations whose end-of-call webhook never
+// arrived and whose idle backstop was lost to a redeploy before it fired.
+export async function deriveFinalOutcome(conversationId: string): Promise<FinalOutcome> {
   const supabase = getSupabaseClient();
 
   const { data: escalation } = await supabase
