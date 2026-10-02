@@ -1,4 +1,8 @@
-<!-- Placeholder — running list of known simplifications, for the reflection sheet. Updated throughout the build. -->
+# Reflection notes
+
+A running record of simplifications, decisions, and findings, kept as source material for the reflection sheet. The earlier entries were written as the build went. "Decisions and findings from testing" at the end summarises the testing-and-hardening phase, and corrects one earlier entry.
+
+## Build log
 
 - `lookup_payout`'s output omits `support_summary` (present in `mcp-tool-requirements.md`'s
   example contract) because the Phase 1 `payouts` schema has no such column — only
@@ -318,3 +322,81 @@
   `apps/mcp-server/src/lib/mailer.ts`; `BREVO_API_KEY` is replaced by `RESEND_API_KEY`. Resend
   refuses freemail senders outright, so this also forces the custom-domain fix for the gmail.com
   DMARC limitation above rather than leaving mail silently undelivered.
+
+## Decisions and findings from testing
+
+### Correction to an earlier entry
+The voice-latency entry above concludes that "Vapi simply isn't configured to send `end-of-call-report`". That was wrong. Vapi was sending it, but `/vapi/events` only accepted the `x-vapi-secret` header, and Vapi's credential-based setup authenticates differently, so every webhook got a 401. The endpoint now accepts both forms, trims stray whitespace from the secret, and writes rejected webhooks to the audit log. A server-side idle backstop also finalizes calls whose webhook never arrives, about 15 minutes after the session goes quiet.
+
+### Design choice: contact-form storage
+Contact-form submissions are stored in a dedicated `contact_submissions` table (`0007_contact_submissions.sql`), one row per conversation, with a resubmission replacing the earlier one. That's preferred over a JSON column on `conversations`: it matches the rest of the schema, is simpler for `create_escalation` to query, and is easier to audit.
+
+### The model told nothing about the form
+Submitting the contact form stored the details, but the model only ever sees the caller's words, so it never learned the form arrived and never created the escalation. The queue stayed empty while the page showed "callback arranged". Now the server queues a note for the model's next turn, and the browser prompts Vapi to respond straight away.
+
+### Invented references
+The agent read out "RP-12248" for a case that was never created. `create_escalation` had trusted model-supplied `ticket_id` and `customer_id` values. Both are foreign keys, so made-up values failed the insert and the case was lost, while the model spoke its own number. Both values are now resolved on the server: a ticket only links if it was created on this call, and the customer only if verified on it. The UI shows only references the tools return, and the prompt forbids composing one.
+
+### Verification: from "two facts" to "email plus a fact"
+Originally any two of name, company, email and customer ID verified a caller. But name plus company is public knowledge: anyone who knew Amara works at LagosLedger could act on her behalf. Verification now needs the account email plus a name or company, and the agent never asks for a customer ID, since real customers don't know it. Matching tolerates speech-recognition slips in names ("Legos Ledger") and punctuation in emails ("accra-stack"), but every letter of the email must match.
+
+### Nothing shared before verification (a deliberate departure from Scenario 4)
+`assets/test-scenarios.md` Scenario 4 expects a status answer for a bare reference. Testing showed why that's risky: a reference alone doesn't prove ownership, and the status and summary already leak information. `lookup_transaction` and `lookup_payout` now refuse until the caller is verified. They check before querying, so an unverified caller can't even learn whether a reference exists. Two related gaps were closed at the same time:
+- tickets need a verified caller;
+- an unverified caller's callback case is never linked to the record they mentioned, so a specialist can't be steered into discussing someone else's payout.
+
+### Priority: a fixed map became a computed rubric
+Priority used to be a fixed category map (account was always High, payment always Medium). So a routine balance review outranked "my payment never arrived". Priority is now computed on the server from the category plus three signals the model reports:
+- the caller is urgent or frustrated;
+- funds are overdue;
+- the account is restricted.
+
+The server confirms the last two from the database, and those checks can only raise priority. Tickets previously let the model pick any priority. Both kinds of case now go through the same function (`lib/priority.ts`).
+
+### Why the prompt was rewritten, and what moved into code
+Eval runs flipped between pass and fail on identical builds. Two causes:
+- **The prompt had grown from 748 to 2,786 words of patched-on rules that contradicted each other,** e.g. "verify first" against "look up a bare reference immediately".
+- **Anything the model must always do was only done some of the time.** For example, `log_conversation_event` was called twice in nine escalations.
+
+The prompt was rewritten at 1,358 words, with a numbered "what to do first" order that settles conflicts, and each rule stated once. Everything that must always happen moved into code:
+- event logging (escalations, tickets, failed verifications, declines);
+- speaking references digit by digit;
+- turning callback times into words. The model kept saying "two thirty-five" for 14:00, likely copying a ":35" example in the prompt;
+- dropping narration and anything said before a tool call. The model would say "the docs don't cover that", then search, then answer correctly. By then the false claim had already been spoken;
+- the end-of-call sign-off.
+
+Rule of thumb: if a requirement can be checked, enforce it in code. The prompt is for judgement.
+
+### Retrieval misses
+"Can RelayPay guarantee my payout by 9am?" didn't retrieve the "Can RelayPay Guarantee Payment Timelines?" FAQ, for three reasons:
+- **Only the body was indexed, and the question sits in the heading.** Headings are now indexed (`0014`), and embeddings include them.
+- **Keyword search ANDed every word**, so natural questions rarely matched. Terms are now ORed.
+- **The model rewrote the caller's question before searching.** The search now also runs on the caller's own words (`0015`) and keeps each chunk's best score.
+
+### Haiku vs Sonnet
+The plan was to develop on Haiku 4.5 and compare it with Sonnet before submitting. With the same code, prompt and tests (3 attempts per scenario):
+
+| Model | Attempts passed | Scenarios at 3/3 |
+|---|---|---|
+| Haiku 4.5 | 18/24 | 4 of 8 |
+| Sonnet 5 | 24/24 | 8 of 8 |
+
+Haiku's failures were all skipped instructions: not looking up a reference, not creating a ticket, not showing the form, not searching. The deployment uses `claude-sonnet-5`. The cost is several times higher per call, and replies are a little slower.
+
+### Measuring non-determinism
+A single eval pass proved little: identical builds scored anywhere from 5/8 to 8/8. The runner now plays each scenario 3 times and counts a pass only if all 3 succeed. Checks read what actually happened in Supabase (tools called, rows created, events logged), not just the reply text, and they're tied to the behaviour under test rather than to a fixed turn. Eval calls are closed as soon as they finish. Each holds an Agent SDK process of about 250 MB, and running them back to back exhausted the Render instance (a 502).
+
+### Ending calls
+The agent tags its final reply with `end_call=true`. The backend then appends a fixed sign-off, "Thank you for calling RelayPay. Goodbye.", which Vapi's End Call Phrases setting matches, and Vapi hangs up once it's spoken. Because only code writes that phrase, a stray "goodbye" from the model can't drop a call. The browser hangs up as a backstop.
+
+### Email
+Gmail SMTP was blocked by Render, and Brevo with a gmail.com sender failed DMARC. Resend with a verified custom domain (`abdulsalamadebayo.com.ng`) works. Signup now confirms email ownership through a Resend-sent link. Before that, anyone could sign up with someone else's email and read their call transcripts, because call history is matched by email.
+
+### Known limitations
+- **Memory per call.** Each live call holds about 250 MB on the agent backend, so a small Render instance supports roughly one call at a time.
+- **Model cost.** Sonnet is billed by Anthropic on top of Vapi, which is about $0.06 per minute.
+- **Seed data.** The emails are `.example` addresses, so customer confirmation emails to them can't be delivered. Every seed transaction is past its arrival date unless the dates are refreshed.
+- **Speech recognition** still mishears names and references. The server tolerates it, and transcriber keyterms reduce it, but neither removes it.
+- **The narration filter is pattern-based.** It catches common lead-ins, not every phrasing.
+- **Scenario 9 (the voice path)** is checked by hand, not in the eval runner.
+- **No business-hours check:** the form accepts any callback time, including 05:35.

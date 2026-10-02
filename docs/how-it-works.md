@@ -1,10 +1,56 @@
-<!-- Placeholder — the one-page explanation deliverable. Implemented in Phase 9. -->
+# How the RelayPay voice support agent works
 
-## Design choice: contact-form storage (Phase 4.5)
+RelayPay's support line is a voice agent you talk to in the browser. It answers product and policy questions from approved documentation. It looks up a caller's own transactions and payouts once they've proved who they are. Anything that needs a person goes to a specialist callback, which appears in a support queue.
 
-Contact-form submissions are stored in a dedicated `contact_submissions` table
-(`supabase/migrations/0007_contact_submissions.sql`), one row per
-`conversation_id` (a resubmission upserts/replaces the prior row), rather
-than a JSON column on `conversations`. A normalized table matches the rest
-of the schema, is simpler to query from `create_escalation`, and is easier
-to extend if a later phase wants to audit or list submissions.
+**Try it:** open https://agent-backend-ct16.onrender.com, press **Start a call**, and allow the microphone. Test identities are listed under "Things to try" below.
+
+## The four layers
+
+| Layer | What it is | What it does |
+|---|---|---|
+| **Voice** | Vapi, with Deepgram Nova 3 speech-to-text (Soniox fallback) | Turns the caller's speech into text, speaks the agent's replies, and ends the call after the agent's goodbye. |
+| **Agent** | `apps/agent`: a Node backend running the Claude Agent SDK (`claude-sonnet-5`), used by Vapi as a "Custom LLM" | Decides what to do each turn, calls tools, and streams a voice-safe reply back. It also serves the web page and the specialist dashboard. |
+| **Tools** | `apps/mcp-server`: an MCP server with 8 tools | The only part that touches business data: search the knowledge base, verify a customer, look up a transaction or payout, create a ticket or escalation, show the contact form, log an event. |
+| **Memory** | Supabase (Postgres + pgvector) | Customers, transactions and payouts; the knowledge base with embeddings; and every conversation, turn, tool call, retrieval, ticket, escalation and evaluation. |
+
+## What happens on a call
+
+1. The caller speaks. Vapi transcribes it and sends the text to the agent backend.
+2. The agent picks a response path (below) and calls whatever MCP tools it needs. Each tool call is logged to `tool_calls`.
+3. Its reply passes through safety layers before Vapi speaks it:
+   - an output guard that blocks leaked emails, amounts or internal notes;
+   - a filter that drops "let me check that"-style narration, and anything said before a tool call;
+   - a rewriter that reads references aloud digit by digit ("T-X-N, nine-zero-zero-one").
+4. If the caller needs a specialist, an on-screen form collects their name, email and callback time. The agent then creates an escalation, which appears in the support queue with a priority and an email confirmation.
+5. When the caller says they're done, the agent adds a fixed sign-off and Vapi hangs up after speaking it. A call summary is emailed to the caller and the support team.
+
+## The four response paths
+
+Every reply is tagged with one of these paths and a confidence level. The tag is stored with each turn and removed before the caller hears it.
+
+1. **Answer:** a general question the knowledge base covers, e.g. "What fees do you charge for international payments?" The agent always searches first and answers only from what it finds.
+2. **Clarify:** the request is too vague to act on, e.g. "My payment is stuck." The agent asks one short question, such as which payment and its reference.
+3. **Escalate:** a person is needed. That covers account restrictions, compliance concerns, disputes, refunds, frustration, or a record that calls for review. The agent arranges a specialist callback.
+4. **Decline:** the knowledge base has nothing reliable and answering would mean guessing. The agent declines rather than inventing an answer, and the decline is logged for the support team.
+
+## Rules enforced in code, not just the prompt
+
+- **Nothing about an account is shared until the caller is verified.** That needs the account email plus their name or company. The lookup tools refuse unverified callers, so even a reference's status stays private. Matching tolerates speech-recognition slips in names, but the email's letters must match exactly.
+- **Tickets need a verified caller.** An unverified caller's callback is never linked to anyone's transaction.
+- **Priority is computed by the server,** from the category plus whether the caller is upset, money is overdue, or the account is restricted. Checks against the database can raise it but never lower it.
+- **Case references and callback times come from the tools.** The agent reads back the reference and time the tools return, and doesn't make them up.
+
+## Things to try
+
+| Say | What happens |
+|---|---|
+| "What fees do you charge for international payments?" | Knowledge-base answer |
+| "I'm Amara Okafor from LagosLedger, my email is amara@lagosledger.example. Can you check TXN-9001?" | Verified, then a transaction lookup |
+| "I'm Efua Mensah from AccraStack, efua@accrastack.example. What's happening with payout PAY-7002?" | Payout under review, then a callback offer, the form, and an escalation |
+| "I'm Amina Jacobs from CapeCloud, amina@capecloud.example. Transaction TXN-9004 failed." | Support ticket |
+| "My account was restricted and nobody is helping me." | High-priority escalation |
+| "No, that's all, bye." | The agent says goodbye and the call ends |
+
+Specialists sign in at `/login` to see the queue. Customers can sign up at `/signup` to see their call history.
+
+**Evidence:** `npm run evals` replays the test scenarios as text against the deployed system and writes [testing-evidence.md](testing-evidence.md).
