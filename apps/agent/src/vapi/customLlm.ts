@@ -10,7 +10,7 @@ import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
 import { speakReferences } from "./spokenReferences.js";
 import { NarrationFilter } from "./narrationFilter.js";
 import { PreToolGate } from "./preToolGate.js";
-import { needsReview, awaitReview } from "./review.js";
+import { needsReview, awaitReview, consumeTyped } from "./review.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -334,7 +334,8 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   // Review before sending: hold the turn until the caller approves (or
   // edits) what they said, then answer that text everywhere below — prompt,
   // knowledge-base search, output guard and the logged transcript.
-  if (needsReview(callId, userMessage.content)) {
+  const typedByCaller = consumeTyped(callId, userMessage.content);
+  if (needsReview(callId, userMessage.content, typedByCaller)) {
     // SSE comments keep the connection to Vapi visibly alive while waiting;
     // OpenAI-style stream parsers ignore them.
     const keepAlive = setInterval(() => {
@@ -359,7 +360,13 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     .then(({ error }) => {
       if (error) console.error("customLlm: failed to store current utterance", error.message);
     });
-  const utterance = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
+  const spokenOrTyped = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
+  // Typed text has no speech-recognition slips: the model shouldn't read a
+  // typed email back or second-guess a typed reference. The label is only in
+  // the prompt; the transcript keeps the caller's words as they are.
+  const utterance = typedByCaller
+    ? `${spokenOrTyped.slice(0, spokenOrTyped.length - userMessage.content.length)}(Typed on screen) ${userMessage.content}`
+    : spokenOrTyped;
   const notes = agent.takeNotes();
   const prompt = notes.length > 0 ? `${notes.join("\n")}\n\n${utterance}` : utterance;
 

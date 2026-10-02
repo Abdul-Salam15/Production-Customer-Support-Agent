@@ -340,6 +340,33 @@
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReview(); }
   });
 
+  /* ---------- Type instead of speaking ----------
+     Sent to the agent as a caller message (the same add-message path as the
+     contact form). Registered with the server first so review-before-sending
+     doesn't hold it: the caller already wrote exactly what they meant. Vapi
+     only transcribes speech, so the line is added to the transcript here. */
+  var typeForm = $('[data-type-form]'), typeInput = $('#type-text'), typeError = $('[data-type-error]');
+  typeForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = typeInput.value.trim();
+    if (!text || !activeVapi || !activeCallId) return;
+    var btn = $('button[type="submit"]', typeForm);
+    btn.disabled = true; typeError.hidden = true;
+    fetch('/api/calls/' + activeCallId + '/typed', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('typed message rejected: ' + r.status);
+      activeVapi.send({ type: 'add-message', message: { role: 'user', content: text }, triggerResponseEnabled: true });
+      addTranscriptLine('you', text + ' (typed)');
+      setCaption('you', text);
+      typeInput.value = '';
+    }).catch(function (err) {
+      console.error('type instead: could not send', err);
+      typeError.hidden = false;
+    }).then(function () { btn.disabled = false; typeInput.focus(); });
+  });
+
   /* ---------- Timer ---------- */
   var timerId = null;
   function renderTimer() { $('[data-call-timer]').textContent = fmt(state.seconds); }

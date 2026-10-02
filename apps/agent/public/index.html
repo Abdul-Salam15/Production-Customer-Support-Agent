@@ -276,6 +276,14 @@
               </div>
             </div>
 
+            <!-- Type instead of speaking, at any point in the call -->
+            <form class="type-box" data-type-form autocomplete="off">
+              <label class="sr-only" for="type-text">Type a message to the agent</label>
+              <input class="field__input" id="type-text" type="text" maxlength="500" placeholder="Type instead of speaking, e.g. an email or a reference">
+              <button class="btn btn--secondary" type="submit">Send</button>
+            </form>
+            <p class="field__error" data-type-error hidden>That didn't send. Please try again.</p>
+
             <div class="call-controls">
               <button class="btn btn--secondary" type="button" data-action="toggle-review" aria-pressed="false" title="Show what you said so you can edit it before the agent replies">
                 <span data-review-label>Review before sending: Off</span>

@@ -45,7 +45,28 @@ export function setReviewEnabled(callId: string, enabled: boolean): void {
   if (review) review.resolve(review.text);
 }
 
-export function needsReview(callId: string, text: string): boolean {
+// Messages the caller typed on the page (registered just before the page
+// sends them to Vapi). They already wrote exactly what they meant, so they
+// skip review. Per call, consumed on first match.
+const typed = new Map<string, string[]>();
+
+export function markTyped(callId: string, text: string): void {
+  const list = typed.get(callId) ?? [];
+  list.push(text.trim());
+  typed.set(callId, list.slice(-5));
+}
+
+// True (once) if the caller typed this message rather than said it.
+export function consumeTyped(callId: string, text: string): boolean {
+  const list = typed.get(callId);
+  const index = list?.indexOf(text.trim()) ?? -1;
+  if (!list || index < 0) return false;
+  list.splice(index, 1);
+  return true;
+}
+
+export function needsReview(callId: string, text: string, typedByCaller: boolean): boolean {
+  if (typedByCaller) return false;
   return enabledCalls.has(callId) && !PAGE_PROMPTS.includes(text.trim());
 }
 
@@ -93,6 +114,7 @@ export function submitReview(callId: string, reviewId: string, text: string): bo
 }
 
 export function clearReview(callId: string): void {
+  typed.delete(callId);
   enabledCalls.delete(callId);
   carried.delete(callId);
   pending.delete(callId);

@@ -199,6 +199,8 @@ button { cursor: pointer; }
 .review-box { margin-top: var(--s-5); padding: var(--s-4); background: var(--c-surface); border: var(--hairline); border-radius: var(--r-2); display: grid; gap: var(--s-2); }
 .review-box__text { min-height: 64px; padding: var(--s-2) var(--s-3); resize: vertical; font-family: inherit; line-height: var(--lh-base); }
 .review-box__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+.type-box { margin-top: var(--s-4); display: flex; gap: var(--s-2); }
+.type-box .field__input { flex: 1 1 auto; min-width: 0; }
 .call-controls { display: flex; flex-wrap: wrap; gap: var(--s-3); margin-top: var(--s-5); padding-top: var(--s-5); border-top: var(--hairline); }
 .call-controls .btn--end { margin-left: auto; }
 

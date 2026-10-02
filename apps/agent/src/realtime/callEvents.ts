@@ -1,6 +1,6 @@
 import type { Request, Response, Router } from "express";
 import { Router as createRouter } from "express";
-import { setReviewEnabled, submitReview } from "../vapi/review.js";
+import { setReviewEnabled, submitReview, markTyped } from "../vapi/review.js";
 
 // Per-call SSE stream the frontend subscribes to (Phase 4.7), wired into
 // window.RelayCall in Stage 8. activity's key is one of app.js's existing
@@ -81,9 +81,24 @@ export function registerReviewRoutes(router: Router): void {
   });
 }
 
+// The page registers a typed message here just before sending it to Vapi,
+// so it isn't held for review (vapi/review.ts).
+export function registerTypedMessageRoute(router: Router): void {
+  router.post("/api/calls/:callId/typed", (req: Request, res: Response) => {
+    const text = (req.body as { text?: unknown })?.text;
+    if (typeof text !== "string" || !text.trim() || text.length > 500) {
+      res.status(400).json({ error: "text must be 1 to 500 characters" });
+      return;
+    }
+    markTyped(req.params.callId, text);
+    res.status(200).json({ ok: true });
+  });
+}
+
 export function createCallEventsRouter(): Router {
   const router = createRouter();
   registerCallEventsRoute(router);
   registerReviewRoutes(router);
+  registerTypedMessageRoute(router);
   return router;
 }
