@@ -22,29 +22,36 @@ function buildSummary(content: string): string {
 }
 
 // Splits the knowledge base on every "###" heading. Each chunk's source_title
-// is its full heading path: "<## section> › <### heading>".
+// is its full heading path: "<## section> › <### heading>". Text between a
+// "##" heading and its first "###" becomes its own chunk titled with the
+// section alone: Policies And Compliance opens with the regulations RelayPay
+// follows and "decisions cannot be overridden by customer support", which
+// were otherwise never indexed.
 function parseKnowledgeBase(markdown: string): Chunk[] {
   const lines = markdown.split("\n");
   const chunks: Chunk[] = [];
 
   let currentH2 = "";
   let currentH3: string | null = null;
+  // True between a "##" heading and its first "###".
+  let inIntro = false;
   let buffer: string[] = [];
 
   const flush = () => {
-    if (currentH3 === null) return;
     const content = buffer.join("\n").trim();
+    buffer = [];
+    if (!content || (currentH3 === null && !inIntro)) return;
     chunks.push({
-      source_title: `${currentH2} › ${currentH3}`,
+      source_title: currentH3 === null ? currentH2 : `${currentH2} › ${currentH3}`,
       source_summary: buildSummary(content),
       content,
     });
-    buffer = [];
   };
 
   for (const line of lines) {
     if (line.startsWith("### ")) {
       flush();
+      inIntro = false;
       currentH3 = line.slice(4).trim();
       continue;
     }
@@ -52,14 +59,16 @@ function parseKnowledgeBase(markdown: string): Chunk[] {
       flush();
       currentH3 = null;
       currentH2 = line.slice(3).trim();
+      inIntro = true;
       continue;
     }
     if (line.startsWith("# ")) {
       flush();
       currentH3 = null;
+      inIntro = false;
       continue;
     }
-    if (currentH3 !== null) {
+    if (currentH3 !== null || inIntro) {
       buffer.push(line);
     }
   }

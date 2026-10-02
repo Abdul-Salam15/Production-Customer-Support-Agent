@@ -198,7 +198,7 @@
                     </div>
                     <div class="contact-form__when-part">
                       <label class="field__sublabel" for="cf-time">Time</label>
-                      <input class="field__input tabular" id="cf-time" name="time" type="time" step="900" required>
+                      <input class="field__input tabular" id="cf-time" name="time" type="time" step="900" min="09:00" max="17:00" required>
                     </div>
                     <div class="contact-form__when-part contact-form__when-part--tz">
                       <label class="field__sublabel" for="cf-tz">Time zone</label>
@@ -213,6 +213,7 @@
                       </select>
                     </div>
                   </div>
+                  <p class="field__hint">Specialists call back Monday to Friday, 9am to 5pm.</p>
                   <p class="field__hint" data-tz-hint>Detected from your browser. Change it if you'll be elsewhere.</p>
                   <p class="field__error" id="cf-when-error" hidden></p>
                 </fieldset>

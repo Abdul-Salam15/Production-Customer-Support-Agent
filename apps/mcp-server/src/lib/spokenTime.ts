@@ -112,3 +112,15 @@ export function callbackInstant(written: string | null | undefined, reference: D
   const candidate = toInstant(year);
   return candidate.getTime() < reference.getTime() - 24 * 60 * 60 * 1000 ? toInstant(year + 1) : candidate;
 }
+
+// Callbacks run Monday to Friday, 9am to 5pm in the caller's own timezone:
+// the written time is wall-clock time in its zone, so the day and time are
+// checked as written. The same rule is in the contact form (app.js) and the
+// contact endpoint (apps/agent contactRoutes.ts). Unparseable text passes.
+export function outsideBusinessHours(written: string | null | undefined): boolean {
+  const m = written?.trim().match(/^([A-Za-z]{3})\w*,?\s+\d{1,2}\s+[A-Za-z]{3}\w*,?\s+(\d{1,2}):(\d{2})/);
+  if (!m) return false;
+  const day = m[1].toLowerCase();
+  const minutes = Number(m[2]) * 60 + Number(m[3]);
+  return day === "sat" || day === "sun" || minutes < 9 * 60 || minutes > 17 * 60;
+}

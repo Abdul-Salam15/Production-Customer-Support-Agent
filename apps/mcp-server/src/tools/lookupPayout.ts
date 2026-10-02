@@ -15,6 +15,42 @@ type LookupPayoutArgs = {
   transaction_id?: string;
 };
 
+// The MCP spec's lookup_payout output includes support_summary, but payouts
+// have no such column. The linked transaction's support_summary is the
+// customer-safe line for the same money movement, so it's used when there is
+// one; otherwise a plain line is built from the payout's own status.
+function fallbackSummary(status: string, failureReason: string | null): string {
+  switch (status) {
+    case "scheduled":
+      return "Payout is scheduled.";
+    case "processing":
+      return "Payout is processing.";
+    case "completed":
+      return "Payout completed.";
+    case "failed":
+      return failureReason ? `Payout failed because ${failureReason}.` : "Payout failed.";
+    case "review required":
+      return failureReason ? `Payout is on hold for ${failureReason}.` : "Payout is on hold for review.";
+    default:
+      return `Payout status: ${status}.`;
+  }
+}
+
+async function supportSummaryFor(
+  supabase: ReturnType<typeof getSupabaseClient>,
+  payout: { transaction_id: string | null; status: string; failure_reason: string | null }
+): Promise<string> {
+  if (payout.transaction_id) {
+    const { data } = await supabase
+      .from("transactions")
+      .select("support_summary")
+      .eq("transaction_id", payout.transaction_id)
+      .maybeSingle();
+    if (data?.support_summary) return data.support_summary;
+  }
+  return fallbackSummary(payout.status, payout.failure_reason);
+}
+
 function recommendedActionFor(status: string): "none" | "ticket" | "escalate" {
   if (status === "review required") return "escalate";
   if (status === "failed") return "ticket";
@@ -56,6 +92,7 @@ async function handle(args: LookupPayoutArgs, ctx: ToolContext): Promise<Record<
     status: data.status,
     scheduled_for: data.scheduled_for,
     failure_reason: data.failure_reason,
+    support_summary: await supportSummaryFor(supabase, data),
     past_estimated_arrival: isPastEstimatedArrival(data.scheduled_for),
     recommended_action: recommendedActionFor(data.status),
   };

@@ -446,6 +446,10 @@
       if (!d) return 'Choose a date';
       if (!t) return 'Choose a time';
       if (d < cfDate.min) return 'Choose a date from today onwards';
+      // Same rule as the server (contactRoutes.ts, create_escalation).
+      var weekday = new Date(d + 'T12:00:00').getDay();
+      if (weekday === 0 || weekday === 6) return 'Choose a weekday. Specialists call back Monday to Friday';
+      if (t < '09:00' || t > '17:00') return 'Choose a time between 9am and 5pm';
       return '';
     }
   };

@@ -9,7 +9,7 @@ import { sendEmail } from "../lib/mailer.js";
 import { logAudit } from "../lib/auditLog.js";
 import { computePriority, confirmSignals } from "../lib/priority.js";
 import { resolveLinkedRecords } from "../lib/linkedRecords.js";
-import { spokenCallbackTime, callbackInstant } from "../lib/spokenTime.js";
+import { spokenCallbackTime, callbackInstant, outsideBusinessHours } from "../lib/spokenTime.js";
 import { recordConversationEvent } from "../lib/conversationEvents.js";
 
 const inputShape = {
@@ -233,6 +233,14 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
   }
   if (!EMAIL_RE.test(userEmail)) {
     return { status: "invalid", error: "invalid_email" };
+  }
+  // The form already enforces this; a time spoken aloud is checked here.
+  if (outsideBusinessHours(preferredTime)) {
+    return {
+      status: "invalid",
+      error: "outside_business_hours",
+      guidance: "Callbacks run Monday to Friday, 9am to 5pm in the caller's timezone. Ask for a time in those hours. No case was created.",
+    };
   }
 
   const linked = await resolveLinkedRecords(supabase, conversationId, {

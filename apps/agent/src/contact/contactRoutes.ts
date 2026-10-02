@@ -20,6 +20,18 @@ interface ContactSubmissionBody {
   callbackTime?: unknown;
 }
 
+// Callbacks run Monday to Friday, 9am to 5pm in the caller's chosen
+// timezone. The form's time ("Thu 8 Oct, 14:00 WAT") is wall-clock time in
+// that zone, so the day and time are checked as written. The same rule is in
+// the form (app.js) and create_escalation (mcp-server lib/spokenTime.ts).
+function outsideBusinessHours(written: string): boolean {
+  const m = written.match(/^([A-Za-z]{3})\w*,?\s+\d{1,2}\s+[A-Za-z]{3}\w*,?\s+(\d{1,2}):(\d{2})/);
+  if (!m) return false;
+  const day = m[1].toLowerCase();
+  const minutes = Number(m[2]) * 60 + Number(m[3]);
+  return day === "sat" || day === "sun" || minutes < 9 * 60 || minutes > 17 * 60;
+}
+
 async function handleContactSubmission(req: Request, res: Response): Promise<void> {
     const { callId } = req.params;
     const body = req.body as ContactSubmissionBody;
@@ -40,6 +52,10 @@ async function handleContactSubmission(req: Request, res: Response): Promise<voi
 
     const name = body.name.trim();
     const callbackTime = typeof body.callbackTime === "string" ? body.callbackTime.trim() || null : null;
+    if (callbackTime && outsideBusinessHours(callbackTime)) {
+      res.status(400).json({ error: "Callbacks run Monday to Friday, 9am to 5pm" });
+      return;
+    }
 
     const supabase = getSupabaseClient();
     const { data: conversation } = await supabase

@@ -4,6 +4,7 @@
 // with the idle-session reaper as a server-side backstop if neither arrives.
 // Whichever runs first wins: the row is claimed with a conditional update on
 // ended_at, so the summary email goes out exactly once.
+import Anthropic from "@anthropic-ai/sdk";
 import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { sendEmail } from "../mailer.js";
@@ -69,6 +70,55 @@ async function deriveFinalOutcome(conversationId: string): Promise<FinalOutcome>
   return { status: "abandoned", summary: "Call ended without a resolution.", escalation: null, ticket: null };
 }
 
+const SUMMARY_SYSTEM_PROMPT =
+  "You write the summary line a RelayPay support specialist reads in the call log. Given a call transcript and " +
+  "its recorded outcome, write one or two plain sentences: what the caller wanted, what was done (verification, " +
+  "lookups, any ticket or escalation and its reference), and how the call ended. Use only what the transcript " +
+  "shows. No preamble, no markdown.";
+
+let anthropic: Anthropic | null = null;
+
+// The PRD's conversation record has a summary; the outcome line alone
+// ("Resolved directly by the agent.") says nothing about what was discussed.
+// Best-effort: on any failure the caller keeps the outcome line.
+async function summarizeCall(conversationId: string, outcome: FinalOutcome): Promise<string | null> {
+  const { data: turns } = await getSupabaseClient()
+    .from("conversation_turns")
+    .select("role, transcript")
+    .eq("conversation_id", conversationId)
+    .order("turn_index", { ascending: true });
+  if (!turns || turns.length === 0) return null;
+
+  const transcript = (turns as { role: string; transcript: string }[])
+    .map((turn) => `${turn.role === "agent" ? "Agent" : "Caller"}: ${turn.transcript}`)
+    .join("\n");
+
+  try {
+    anthropic ??= new Anthropic({ apiKey: getEnv().ANTHROPIC_API_KEY, timeout: 15_000, maxRetries: 1 });
+    const response = await anthropic.messages.create({
+      model: getEnv().ANTHROPIC_MODEL,
+      // Deliberately short: the output is one or two sentences.
+      max_tokens: 300,
+      thinking: { type: "disabled" },
+      system: SUMMARY_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: `Recorded outcome: ${outcome.summary}\n\nTranscript:\n${transcript}` }],
+    });
+    if (response.stop_reason === "refusal") return null;
+    const text = response.content
+      .map((block) => (block.type === "text" ? block.text : ""))
+      .join("")
+      .trim();
+    return text || null;
+  } catch (error) {
+    if (error instanceof Anthropic.APIError) {
+      console.error(`finalizeCall: summary request failed (${error.status})`, error.message);
+    } else {
+      console.error("finalizeCall: summary request failed", error);
+    }
+    return null;
+  }
+}
+
 export type FinalizeResult = "finalized" | "already_finalized" | "not_found";
 
 export async function finalizeCall(callId: string, endedReason: string | null): Promise<FinalizeResult> {
@@ -83,6 +133,8 @@ export async function finalizeCall(callId: string, endedReason: string | null): 
   if (conversation.ended_at) return "already_finalized";
 
   const outcome = await deriveFinalOutcome(conversation.conversation_id);
+  // For the log and staff; the customer's email keeps the plain outcome line.
+  const summary = (await summarizeCall(conversation.conversation_id, outcome)) ?? outcome.summary;
 
   const { data: claimed, error } = await supabase
     .from("conversations")
@@ -90,7 +142,7 @@ export async function finalizeCall(callId: string, endedReason: string | null): 
       ended_at: new Date().toISOString(),
       ended_reason: endedReason,
       final_status: outcome.status,
-      summary: outcome.summary,
+      summary,
     })
     .eq("conversation_id", conversation.conversation_id)
     .is("ended_at", null)
@@ -99,13 +151,13 @@ export async function finalizeCall(callId: string, endedReason: string | null): 
   if (error) throw new Error(`failed to finalize conversation: ${error.message}`);
   if (!claimed || claimed.length === 0) return "already_finalized";
 
-  void logAudit("call", `Call ended — ${outcome.summary}`);
+  void logAudit("call", `Call ended — ${summary}`);
 
   // Best-effort and NOT awaited: the conversation is already finalized
   // above, so neither an email-provider failure nor a slow connection
   // should delay the caller of this function (Vapi's webhook retry logic
   // in particular).
-  sendCallSummaryEmail(conversation.conversation_id, callId, outcome).catch((emailError) => {
+  sendCallSummaryEmail(conversation.conversation_id, callId, outcome, summary).catch((emailError) => {
     console.error("finalizeCall: failed to send call summary email", emailError);
   });
 
@@ -142,7 +194,12 @@ function customerOutcomeLines(outcome: FinalOutcome, callbackTime: string | null
   return [outcome.summary];
 }
 
-async function sendCallSummaryEmail(conversationId: string, callId: string, outcome: FinalOutcome): Promise<void> {
+async function sendCallSummaryEmail(
+  conversationId: string,
+  callId: string,
+  outcome: FinalOutcome,
+  summary: string
+): Promise<void> {
   const supabase = getSupabaseClient();
   const env = getEnv();
 
@@ -194,7 +251,7 @@ async function sendCallSummaryEmail(conversationId: string, callId: string, outc
   const internalText = [
     `Call ${callId} ended.`,
     `Status: ${outcome.status}`,
-    `Summary: ${outcome.summary}`,
+    `Summary: ${summary}`,
     ...formLines,
     ``,
     `Transcript:`,
