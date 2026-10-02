@@ -25,7 +25,7 @@ RelayPay's support line is a voice agent you talk to in the browser. It answers 
    - a rewriter that reads references aloud digit by digit ("T-X-N, nine-zero-zero-one").
 4. If the caller needs a specialist, an on-screen form collects their name, email and callback time. The agent then creates an escalation, which appears in the support queue with a priority and an email confirmation.
 5. When the caller says they're done, the agent adds a fixed sign-off and Vapi hangs up after speaking it. A call summary is emailed to the caller and the support team.
-6. If the caller goes quiet, Vapi itself (not the agent backend, which only runs when spoken to) checks in after 10 seconds, then ends the call after 15 if there's still nothing.
+6. If the caller goes quiet, Vapi itself (not the agent backend, which only runs when spoken to) checks in after 20 seconds, then ends the call after 25 if there's still nothing. The check only resets on actual speech, not on typing or submitting the contact form, so it's set generously to give form-filling room.
 
 ## The four response paths
 

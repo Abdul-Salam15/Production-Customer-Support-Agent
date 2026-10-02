@@ -5,14 +5,22 @@
 // for exactly this: https://docs.vapi.ai/assistants/assistant-hooks
 //
 // Two hooks, both on "customer.speech.timeout", both counting from the same
-// "time since the caller last spoke" clock (so the 15s hook doesn't wait 15s
-// *after* the 10s one — they fire 5 seconds apart, as asked for):
-//   10s of silence -> says "Are you still there?"
-//   15s of silence -> says a closing line, then ends the call (the tool
+// "time since the caller last spoke" clock (so the 25s hook doesn't wait 25s
+// *after* the 20s one — they fire 5 seconds apart, as originally asked for):
+//   20s of silence -> says "Are you still there?"
+//   25s of silence -> says a closing line, then ends the call (the tool
 //     action, not a spoken phrase match — independent of the separate "End
 //     Call Phrases" setting already configured for model-driven goodbyes).
 // triggerResetMode "onUserSpeech" means both can fire again later in the same
 // call if the caller goes quiet more than once, not just the first time.
+//
+// Started at 10s/15s; raised to 20s/25s after a real call showed the check-in
+// firing too early. The hook only resets on actual spoken audio — submitting
+// the on-screen form, or typing instead of speaking (apps/agent/src/vapi/
+// review.ts's typed-message path), never resets it, so a caller who fills in
+// the form or types their reply can look "silent" to Vapi the whole time.
+// This widens the window rather than fixing that gap, which isn't solvable
+// from our side: Vapi's hook has no API to reset it for non-speech activity.
 //
 // Needs the Vapi account's own Private API key (Dashboard -> API Keys) —
 // NOT VAPI_PRIVATE_KEY from apps/agent/.env, which is a different, separate
@@ -38,13 +46,13 @@ const OUR_HOOKS: Hook[] = [
   {
     on: "customer.speech.timeout",
     name: "relaypay_silence_check_in",
-    options: { timeoutSeconds: 10, triggerMaxCount: 1, triggerResetMode: "onUserSpeech" },
+    options: { timeoutSeconds: 20, triggerMaxCount: 1, triggerResetMode: "onUserSpeech" },
     do: [{ type: "say", exact: "Are you still there?" }],
   },
   {
     on: "customer.speech.timeout",
     name: "relaypay_silence_hangup",
-    options: { timeoutSeconds: 15, triggerMaxCount: 1, triggerResetMode: "onUserSpeech" },
+    options: { timeoutSeconds: 25, triggerMaxCount: 1, triggerResetMode: "onUserSpeech" },
     do: [
       {
         type: "say",

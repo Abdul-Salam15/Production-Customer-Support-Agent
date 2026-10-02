@@ -290,9 +290,12 @@ URL — so the Custom LLM URL becomes
 
 The Custom LLM endpoint only runs when the caller speaks, so our own backend has no way to
 make the agent talk first. Vapi's own [assistant hooks](https://docs.vapi.ai/assistants/assistant-hooks)
-handle this instead, entirely on Vapi's side: after 10 seconds of silence the assistant asks
-"Are you still there?"; after 15 seconds (5 seconds later) it says a closing line and ends the
-call. One-time setup, against your real assistant:
+handle this instead, entirely on Vapi's side: after 20 seconds of silence the assistant asks
+"Are you still there?"; after 25 seconds (5 seconds later) it says a closing line and ends the
+call. The hook only resets on actual spoken audio, not on a submitted form or typed reply, so a
+caller filling in the contact form can look silent to Vapi the whole time — 20s gives that
+comfortably more room than the original 10s, which fired mid-form on a real call. One-time setup,
+against your real assistant:
 
 ```bash
 VAPI_API_KEY='...' npm run configure-vapi-silence-hooks
@@ -325,9 +328,12 @@ the call if you stay quiet.
    curl -X POST https://mcp-server-xxxx.onrender.com/mcp \
      -H "Authorization: Bearer <your MCP_SERVER_TOKEN value>" \
      -H "Content-Type: application/json" \
+     -H "Accept: application/json, text/event-stream" \
      -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
    ```
-   **You should see** a JSON response listing the eight tools, not a 401 or connection error.
+   **You should see** a JSON response listing the eight tools, not a 401, a 406, or a connection
+   error. The `Accept` header is required by the Streamable HTTP transport (the MCP SDK rejects
+   requests without it, independently of the bearer token).
 
 ---
 

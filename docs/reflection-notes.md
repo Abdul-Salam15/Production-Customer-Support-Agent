@@ -396,6 +396,9 @@ A single eval pass proved little: identical builds scored anywhere from 5/8 to 8
 ### Ending calls
 The agent tags its final reply with `end_call=true`. The backend then appends a fixed sign-off, "Thank you for calling RelayPay. Goodbye.", which Vapi's End Call Phrases setting matches, and Vapi hangs up once it's spoken. Because only code writes that phrase, a stray "goodbye" from the model can't drop a call. The browser hangs up as a backstop.
 
+### Silence check-in firing too early
+A real call showed "Are you still there?" firing 22 seconds after the caller's last words, not the 10 seconds the hook was set to. The caller had submitted the contact form and then typed a confirmation rather than speaking it. Vapi's `customer.speech.timeout` hook only resets on actual spoken audio, not on a submitted form or a typed reply (`apps/agent/src/vapi/review.ts`'s typed-message path), so from Vapi's side the caller had gone quiet the moment they stopped talking, and stayed "silent" through the whole form-filling process even though they were actively doing something. Raised both hooks from 10s/15s to 20s/25s (`scripts/configure-vapi-silence-hooks.ts`) to give that comfortably more room. This doesn't fix the underlying gap, a long enough form-fill or typed exchange could still trip it, and there's no API to tell Vapi's hook "they're still here" for non-speech activity.
+
 ### Email
 Gmail SMTP was blocked by Render, and Brevo with a gmail.com sender failed DMARC. Resend with a verified custom domain (`abdulsalamadebayo.com.ng`) works. Signup now confirms email ownership through a Resend-sent link. Before that, anyone could sign up with someone else's email and read their call transcripts, because call history is matched by email.
 
