@@ -21,8 +21,12 @@ type LookupCustomerArgs = {
 async function handle(args: LookupCustomerArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
   const { customer_id, email, company_name, contact_name } = args;
 
-  if (!customer_id && !email && !company_name && !contact_name) {
-    return { found: false };
+  if (!email) {
+    // Not an enumeration leak: says nothing about whether the person exists.
+    return { found: false, needs: "email" };
+  }
+  if (!customer_id && !company_name && !contact_name) {
+    return { found: false, needs: "name_or_company" };
   }
 
   const supabase = getSupabaseClient();
@@ -75,8 +79,10 @@ export function registerLookupCustomer(server: McpServer): void {
     {
       title: "Lookup Customer",
       description:
-        "Find a customer record when the caller provides at least two matching identifying " +
-        "details (customer ID, email, company name, contact name). One field alone is not enough.",
+        "Verify the caller and fetch their account. Requires the account email address plus at least one of " +
+        "contact name or company name (a customer id counts only if the caller volunteers it — never ask for one). " +
+        "Name and company alone never verify. Pass the email in written form (amara@lagosledger.example). " +
+        "found: false means no match — never say which detail was wrong.",
       inputSchema: inputShape,
     },
     withLogging("lookup_customer", "Verify caller identity and fetch account status", handle)

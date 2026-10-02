@@ -29,7 +29,7 @@ function normalize(value: string): string {
 // mishears words: "LagosLedger" comes back as "Lagos Ledger" or "Legos
 // Ledger", "CUS-1001" as "cus 1001". Comparing letters and digits only, with
 // one slip allowed in longer values, stops genuine callers failing while
-// still requiring two independent facts to agree (MIN_MATCHED_FACTS).
+// still requiring the email plus another fact to agree (MIN_MATCHED_FACTS).
 function compact(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -78,37 +78,44 @@ function matchesContactName(recordContactName: string, supplied: string): boolea
   );
 }
 
-function countMatchedFacts(record: CustomerRecord, fields: LookupCustomerFields): number {
+// Speech recognition delivers emails as "amara at lagosledger dot example"
+// or with stray spaces; turn that back into a written address.
+export function normalizeSpokenEmail(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/\s+at\s+/g, "@")
+    .replace(/\s+dot\s+/g, ".")
+    .replace(/\s+/g, "");
+}
+
+function emailMatches(record: CustomerRecord, supplied: string | undefined): boolean {
+  // Exact once spacing is fixed — no fuzzy slip: one character in an email
+  // is a different person.
+  return !!supplied && normalizeSpokenEmail(supplied) === normalize(record.contact_email);
+}
+
+function countOtherFacts(record: CustomerRecord, fields: LookupCustomerFields): number {
   let count = 0;
-  // Ids and emails must match exactly once punctuation/spacing is ignored —
-  // no fuzzy slip, since one character there is a different customer.
   if (fields.customer_id && compact(fields.customer_id) === compact(record.customer_id)) count++;
-  if (fields.email && normalize(fields.email).replace(/\s+/g, "") === normalize(record.contact_email)) count++;
   if (fields.company_name && closeEnough(compactCompany(record.company_name), compactCompany(fields.company_name))) count++;
   if (fields.contact_name && matchesContactName(record.contact_name, fields.contact_name)) count++;
   return count;
 }
 
-// Picks the best-matching record and requires at least two supplied fields to
-// agree with it. One field alone (e.g. company name only) is never enough —
-// this is what closes the enumeration gap in Scenario 3.
+// The account email is required, plus at least one other fact (name,
+// company, or customer id) that agrees with the same record. A name and a
+// company alone are public knowledge — anyone who knows Amara works at
+// LagosLedger could otherwise talk to support on her behalf. Customers
+// rarely know their customer id, so the agent never asks for it; it only
+// counts if the caller volunteers it.
 export function findVerifiedCustomer(
   records: CustomerRecord[],
   fields: LookupCustomerFields
 ): CustomerRecord | null {
-  let best: { record: CustomerRecord; score: number } | null = null;
-
-  for (const record of records) {
-    const score = countMatchedFacts(record, fields);
-    if (!best || score > best.score) {
-      best = { record, score };
-    }
-  }
-
-  if (best && best.score >= MIN_MATCHED_FACTS) {
-    return best.record;
-  }
-  return null;
+  if (!fields.email) return null;
+  const record = records.find((r) => emailMatches(r, fields.email));
+  if (!record) return null;
+  return countOtherFacts(record, fields) >= MIN_MATCHED_FACTS - 1 ? record : null;
 }
 
 // True when a transaction/payout's owning customer differs from the one
