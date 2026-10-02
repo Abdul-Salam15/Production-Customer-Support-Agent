@@ -476,6 +476,38 @@ const SCENARIOS: Scenario[] = [
     },
   },
   {
+    n: 12,
+    title: "Verified caller given someone else's reference (extra)",
+    expected:
+      "A verified caller asking about a real reference that belongs to a different customer hears neither its status nor that it exists; the reply " +
+      "allows for either an incorrect reference or one not linked to their account, and never reveals the record or its real owner.",
+    run: async (call, c) => {
+      await call.say("I'm Amara Okafor from LagosLedger, my email is amara@lagosledger.example.");
+      let o = await observe(call);
+      if (!o.tools.some((t) => t.tool_name === "lookup_customer" && t.result_summary?.includes('"found":true'))) {
+        await call.say("Yes, that's right.");
+        o = await observe(call);
+      }
+      // TXN-9005 is real but belongs to CUS-1005 (Patrick/KigaliWorks), not Amara.
+      const reply = await call.say("Can you check transaction TXN-9005?");
+      o = await observe(call);
+      c.called(o, "lookup_transaction");
+      c.add(
+        "no record data returned for someone else's reference",
+        !o.tools.some((t) => t.tool_name === "lookup_transaction" && t.result_summary?.includes('"found":true'))
+      );
+      c.replyMatches(
+        "allows for either cause",
+        reply,
+        /(wrong|incorrect|typo|mistyped|misdial|not\s+(be\s+)?linked|isn't linked|not associated|doesn't look like it'?s linked)/i
+      );
+      c.replyAvoids("doesn't reveal it belongs to someone else", reply, /patrick|kigaliworks|cus-1005|someone else|another (customer|account)/i);
+      c.replyAvoids("no status or amount leaked", reply, /delay|complet|process|review|fail|3,?100|\beur\b/i);
+      c.eventLogged(o, "lookup_denied_ownership");
+      c.noToolErrors(o);
+    },
+  },
+  {
     n: 9,
     title: "Voice flow",
     expected: "Vapi captures speech, the backend responds, Vapi speaks the reply, Supabase logs the conversation and tool calls.",

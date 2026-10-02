@@ -4,6 +4,7 @@ import { getSupabaseClient } from "../lib/supabaseClient.js";
 import { getVerifiedCustomerId, isOwnershipViolation } from "../lib/verification.js";
 import { isPastEstimatedArrival } from "../lib/dates.js";
 import { withLogging, type ToolContext } from "../lib/withLogging.js";
+import { recordConversationEvent } from "../lib/conversationEvents.js";
 
 const inputShape = {
   payout_id: z.string().optional(),
@@ -83,6 +84,14 @@ async function handle(args: LookupPayoutArgs, ctx: ToolContext): Promise<Record<
   if (!data) return { found: false };
 
   if (isOwnershipViolation(data.customer_id, verifiedCustomerId)) {
+    // Staff-only signal, never spoken — see lookupTransaction.ts.
+    const reference = payout_id ?? transaction_id ?? "";
+    await recordConversationEvent(
+      ctx.conversationId,
+      "lookup_denied_ownership",
+      `Caller asked about payout ${reference}, which isn't linked to their verified account.`,
+      { requested_reference: reference, owner_customer_id: data.customer_id, caller_customer_id: verifiedCustomerId }
+    );
     return { found: false };
   }
 

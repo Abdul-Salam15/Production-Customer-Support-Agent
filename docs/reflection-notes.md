@@ -345,6 +345,13 @@ Originally any two of name, company, email and customer ID verified a caller. Bu
 - tickets need a verified caller;
 - an unverified caller's callback case is never linked to the record they mentioned, so a specialist can't be steered into discussing someone else's payout.
 
+### A verified caller given someone else's reference
+A real call surfaced this: Amara (verified, CUS-1001) asked about TXN-9005, which belongs to Patrick (CUS-1005). `lookup_transaction` correctly refused it (`isOwnershipViolation`), but the model told her "I'm not finding a transaction with that reference" and kept asking her to double-check the number — implying a typo, with no hint that the real cause might be that the reference simply isn't hers. She had no way to tell the two apart, and the call went in circles.
+
+The fix keeps the privacy property (the tool still returns the same `found: false` whether a reference doesn't exist or belongs to someone else — confirming either would tell a verified stranger that a specific reference is real) but changes what the agent says: it now names both possibilities ("it may be the wrong reference, or it may not be linked to your account") and offers a ticket or callback instead of only repeating the same question. Since the sentence is the same regardless of which case is true, nothing extra is revealed.
+
+Staff still get the distinction: both lookup tools now log a `lookup_denied_ownership` conversation event with the reference and both customer ids, visible in the call's history but never spoken. Covered by eval Scenario 12.
+
 ### Priority: a fixed map became a computed rubric
 Priority used to be a fixed category map (account was always High, payment always Medium). So a routine balance review outranked "my payment never arrived". Priority is now computed on the server from the category plus three signals the model reports:
 - the caller is urgent or frustrated;
