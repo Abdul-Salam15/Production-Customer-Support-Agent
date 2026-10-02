@@ -93,7 +93,10 @@ async function main() {
 
   for (const chunk of chunks) {
     const { data, error } = await supabase.functions.invoke("embed-kb", {
-      body: { text: chunk.content },
+      // Title + body: in the FAQ the question is the heading, and a chunk
+      // embedded without it ("No. Payment timelines depend on…") doesn't
+      // look like the question callers actually ask.
+      body: { text: `${chunk.source_title.split(" › ").pop()}\n\n${chunk.content}` },
     });
     if (error) {
       throw new Error(`embed-kb failed for "${chunk.source_title}": ${error.message}`);
