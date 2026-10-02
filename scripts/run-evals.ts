@@ -275,8 +275,14 @@ const SCENARIOS: Scenario[] = [
       const first = await call.say("I am Amara from LagosLedger. Can you check my account?");
       c.replyMatches("asks for the account email", first, /email/i);
       c.replyAvoids("never asks for a customer id", first, /customer (id|number)/i);
-      const second = await call.say("Sure, it's amara@lagosledger.example.");
-      const o = await observe(call);
+      let second = await call.say("Sure, it's amara@lagosledger.example.");
+      let o = await observe(call);
+      // On voice the agent may read the email back first; confirming is a
+      // normal caller response, not a failure.
+      if (!o.toolNames.includes("lookup_customer")) {
+        second = await call.say("Yes, that's right.");
+        o = await observe(call);
+      }
       const lookup = o.tools.find((t) => t.tool_name === "lookup_customer");
       c.add("lookup_customer verified the caller", !!lookup?.result_summary?.includes('"found":true'));
       c.replyAvoids("no internal fields read out", second, /kyc|support notes|normal support access/i);

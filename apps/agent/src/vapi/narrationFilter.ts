@@ -9,7 +9,7 @@
 // through. Holding a block until its first sentence ends costs a fraction
 // of a second, not the whole reply.
 const NARRATION_RE =
-  /^(?:(?:okay|ok|alright|great|got it|sure|perfect|thanks|thank you)[,.!]?\s+)?(?:now\s+)?(?:let me|i'll|i will|i'm going to|i am going to|i need to|allow me to|give me a moment(?: to)?|one moment(?: while)?(?: i)?)\s+(?:quickly\s+|just\s+|first\s+|go ahead and\s+)?(?:check|look|search|pull|find|verify|confirm (?:those|that|your details)|create (?:the|an|a) (?:escalation|ticket|case|record)|log|record|see what|take a look|run|get that)\b[^.!?:]*[.!?:]+\s*$/i;
+  /^(?:(?:okay|ok|alright|great|got it|sure|perfect|thanks|thank you)[,.!]?\s+)?(?:now\s+)?(?:let me|i'll|i will|i'm going to|i am going to|i need to|allow me to|give me a moment(?: to)?|one moment(?: while)?(?: i)?)\s+(?:quickly\s+|just\s+|first\s+|go ahead and\s+)?(?:check|look|search|pull|find|verify|confirm (?:those|that|your details)|create (?:the|an|a|your|this) (?:escalation|ticket|case|record|support ticket)|log|record|see what|take a look|run|get that)\b[^.!?:]*[.!?:]+\s*$/i;
 
 const MAX_HOLD = 200;
 
