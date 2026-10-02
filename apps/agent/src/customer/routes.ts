@@ -328,7 +328,7 @@ function registerCustomerAuthRoutes(router: Router): void {
       const escaped = account.email.replace(/[\\%_]/g, (c) => `\\${c}`);
       const { data: customer } = await supabase
         .from("customers")
-        .select("customer_id, company_name, contact_email")
+        .select("customer_id, company_name, contact_email, contact_name")
         .ilike("contact_email", escaped)
         .limit(1)
         .maybeSingle();
@@ -364,6 +364,7 @@ function registerCustomerAuthRoutes(router: Router): void {
         verified: true,
         company_name: customer.company_name,
         masked_email: domain ? `${local.slice(0, 2)}***@${domain}` : customer.contact_email,
+        contact_name: customer.contact_name,
       });
     } catch (error) {
       console.error("customer: failed to link account to call", error);

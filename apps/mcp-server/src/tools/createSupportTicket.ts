@@ -6,6 +6,7 @@ import { withLogging, type ToolContext } from "../lib/withLogging.js";
 import { logAudit } from "../lib/auditLog.js";
 import { getVerifiedCustomerId } from "../lib/verification.js";
 import { computePriority, confirmSignals, normalizeCategory } from "../lib/priority.js";
+import { resolveLinkedRecords } from "../lib/linkedRecords.js";
 
 // Priority is not an input: it's computed server-side (lib/priority.ts)
 // from the category and the caller signals below.
@@ -108,11 +109,15 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
 
   const ticketId = await generateUniqueReference((candidate) => referenceInUse(supabase, candidate));
 
+  const linked = await resolveLinkedRecords(supabase, conversationId, {
+    transactionId: args.related_transaction_id,
+    payoutId: args.related_payout_id,
+  });
   const signals = await confirmSignals(
     supabase,
     conversationId,
     { callerUrgent: args.caller_urgent, fundsOverdue: args.funds_overdue, accountRestricted: args.account_restricted },
-    { transactionId: args.related_transaction_id, payoutId: args.related_payout_id }
+    { transactionId: linked.transactionId ?? undefined, payoutId: linked.payoutId ?? undefined }
   );
   const { priority, basis } = computePriority(normalizeCategory(args.category), signals);
 
@@ -125,8 +130,8 @@ async function handle(args: CreateSupportTicketArgs, ctx: ToolContext): Promise<
     category: args.category,
     priority,
     summary: args.summary,
-    related_transaction_id: args.related_transaction_id ?? null,
-    related_payout_id: args.related_payout_id ?? null,
+    related_transaction_id: linked.transactionId,
+    related_payout_id: linked.payoutId,
     status: "open",
   });
 

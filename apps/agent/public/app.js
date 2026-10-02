@@ -398,8 +398,12 @@
   // The verified caller's masked account email, from the account_verified
   // outcome event on a real call (sample values for the demo/review states).
   var ON_FILE_EMAIL = '';
-  function setOnFile(company, maskedEmail) {
+  // The verified account holder's name, prefilled into the form so the case
+  // shows "Amara Okafor" rather than however it was typed.
+  var ON_FILE_NAME = '';
+  function setOnFile(company, maskedEmail, contactName) {
     ON_FILE_EMAIL = maskedEmail || '';
+    ON_FILE_NAME = contactName || '';
     $('[data-on-file-company]', cf).textContent = company ? ' for ' + company : '';
     $('[data-on-file-email]', cf).textContent = ON_FILE_EMAIL;
   }
@@ -493,6 +497,7 @@
   function resetContactForm() {
     clearTimeout(collapseTimer);
     cfForm.reset(); cfTouched = {};
+    if (ON_FILE_NAME) $('#cf-name').value = ON_FILE_NAME;
     cfTz.value = cfTz.dataset.detected || 'Africa/Lagos';
     Object.keys(VALIDATORS).forEach(function (k) { showFieldError(k, ''); });
     cfForm.hidden = false; cfDone.hidden = true;
@@ -780,7 +785,7 @@
         var d = card.data || {};
         if (card.kind === 'account_verified') {
           setCardDetails('verified', { company: d.company_name });
-          setOnFile(d.company_name, d.masked_email);
+          setOnFile(d.company_name, d.masked_email, d.contact_name);
           setOutcome('verified', true);
         } else if (card.kind === 'ticket_created') {
           setCardDetails('ticket', { ref: d.ticket_id });
@@ -817,7 +822,7 @@
     window.RelayHome.linkCall(callId).then(function (result) {
       if (!result || !result.verified || callId !== activeCallId) return;
       setCardDetails('verified', { company: result.company_name });
-      setOnFile(result.company_name, result.masked_email);
+      setOnFile(result.company_name, result.masked_email, result.contact_name);
       setOutcome('verified', true);
     }).catch(function (err) { console.error('could not link the signed-in account to this call', err); });
   }

@@ -261,11 +261,17 @@ async function withMaskedAccountEmail(event: CallEvent, customerId: unknown): Pr
   try {
     const { data } = await getSupabaseClient()
       .from("customers")
-      .select("contact_email")
+      .select("contact_email, contact_name")
       .eq("customer_id", customerId)
       .maybeSingle();
     if (!data?.contact_email) return event;
-    return { ...event, card: { ...event.card, data: { ...event.card.data, masked_email: maskEmail(data.contact_email) } } };
+    return {
+      ...event,
+      card: {
+        ...event.card,
+        data: { ...event.card.data, masked_email: maskEmail(data.contact_email), contact_name: data.contact_name },
+      },
+    };
   } catch (error) {
     console.error("customLlm: failed to load account email for the contact form", error);
     return event;

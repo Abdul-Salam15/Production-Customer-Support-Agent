@@ -8,6 +8,7 @@ import { generateUniqueReference, referenceInUse } from "./createSupportTicket.j
 import { sendEmail } from "../lib/mailer.js";
 import { logAudit } from "../lib/auditLog.js";
 import { computePriority, confirmSignals } from "../lib/priority.js";
+import { resolveLinkedRecords } from "../lib/linkedRecords.js";
 
 const inputShape = {
   ticket_id: z.string().optional(),
@@ -232,11 +233,15 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     return { status: "invalid", error: "invalid_email" };
   }
 
+  const linked = await resolveLinkedRecords(supabase, conversationId, {
+    transactionId: args.related_transaction_id,
+    payoutId: args.related_payout_id,
+  });
   const signals = await confirmSignals(
     supabase,
     conversationId,
     { callerUrgent: args.caller_urgent, fundsOverdue: args.funds_overdue, accountRestricted: args.account_restricted },
-    { transactionId: args.related_transaction_id, payoutId: args.related_payout_id }
+    { transactionId: linked.transactionId ?? undefined, payoutId: linked.payoutId ?? undefined }
   );
   const { priority, basis } = computePriority(args.category, signals);
 
@@ -258,6 +263,8 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
     category: args.category,
     reason: args.reason,
     preferred_time: preferredTime,
+    related_transaction_id: linked.transactionId,
+    related_payout_id: linked.payoutId,
     priority,
     status: "open",
   });
@@ -282,6 +289,9 @@ async function handle(args: CreateEscalationArgs, ctx: ToolContext): Promise<Rec
   return {
     escalation_id: escalationId,
     status: "open",
+    // What was actually stored (the form's time wins) — the agent must read
+    // this back rather than re-derive the time from the conversation.
+    callback_time: preferredTime,
     follow_up_summary: `A ${priority}-priority ${args.category} escalation has been created and a specialist will follow up.`,
   };
 }
