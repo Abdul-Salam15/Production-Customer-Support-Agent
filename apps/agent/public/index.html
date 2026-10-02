@@ -266,7 +266,20 @@
               </div>
             </div>
 
+            <!-- Review before sending: what the caller said, editable, before the agent replies -->
+            <div class="review-box" data-review hidden>
+              <label class="field__label" for="review-text">Check what you said, then send</label>
+              <textarea class="field__input review-box__text" id="review-text" rows="2" maxlength="1000"></textarea>
+              <div class="review-box__foot">
+                <p class="field__hint" data-review-countdown aria-live="off"></p>
+                <button class="btn btn--primary" type="button" data-action="send-review">Send</button>
+              </div>
+            </div>
+
             <div class="call-controls">
+              <button class="btn btn--secondary" type="button" data-action="toggle-review" aria-pressed="false" title="Show what you said so you can edit it before the agent replies">
+                <span data-review-label>Review before sending: Off</span>
+              </button>
               <button class="btn btn--secondary call-controls__mute" type="button" data-action="toggle-mute" aria-pressed="false">
                 <svg data-icon="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/></svg>
                 <svg data-icon="mic-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true" hidden><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21"/><path d="M4 4l16 16"/></svg>

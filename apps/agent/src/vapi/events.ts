@@ -4,6 +4,7 @@ import { getEnv } from "../env.js";
 import { logAudit } from "../auditLog.js";
 import { warmCallAgent, closeCallAgent } from "../session/agentSession.js";
 import { finalizeCall } from "../session/finalizeCall.js";
+import { clearReview } from "./review.js";
 
 // Vapi's documented webhook contract: every server message arrives wrapped
 // as { message: { type, call: { id }, endedReason, ... } }. Verify against
@@ -73,6 +74,7 @@ async function handleEndOfCallReport(req: Request, res: Response): Promise<void>
       if (statusCallId && body.message.status === "in-progress") warmCallAgent(statusCallId);
       if (statusCallId && body.message.status === "ended") {
         closeCallAgent(statusCallId);
+        clearReview(statusCallId);
         finalizeCall(statusCallId, null).catch((error) => {
           console.error("vapi/events: finalize on status-update ended failed", error);
         });
@@ -93,6 +95,7 @@ async function handleEndOfCallReport(req: Request, res: Response): Promise<void>
       return;
     }
     closeCallAgent(callId);
+    clearReview(callId);
 
     const result = await finalizeCall(callId, body.message.endedReason ?? null);
     if (result === "not_found") {

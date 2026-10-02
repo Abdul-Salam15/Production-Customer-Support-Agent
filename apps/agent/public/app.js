@@ -272,6 +272,74 @@
     announce(state.muted ? 'Microphone muted' : 'Microphone on');
   }
 
+  /* ---------- Review before sending ----------
+     When on, each thing the caller says appears in an editable box; the
+     agent waits (server: vapi/review.ts) until they press Send, or answers
+     the original words after the timeout. */
+  var reviewOn = false, currentReview = null, reviewCountdown = null;
+  // reviewId -> the words first shown, so "(edited)" only marks real edits.
+  var reviewOriginals = {};
+  var reviewBox = $('[data-review]'), reviewText = $('#review-text');
+
+  function postReviewMode() {
+    if (!activeCallId) return; // sent once the call id is known
+    fetch('/api/calls/' + activeCallId + '/review-mode', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: reviewOn })
+    }).catch(function (err) { console.error('review mode: could not update', err); });
+  }
+  function setReviewMode(on) {
+    reviewOn = !!on;
+    $('[data-action="toggle-review"]').setAttribute('aria-pressed', reviewOn);
+    $('[data-review-label]').textContent = 'Review before sending: ' + (reviewOn ? 'On' : 'Off');
+    announce(reviewOn ? 'Review before sending is on. You can edit what you said before the agent replies.' : 'Review before sending is off.');
+    postReviewMode();
+  }
+  function showReview(evt) {
+    currentReview = evt.reviewId;
+    reviewOriginals[evt.reviewId] = evt.text;
+    reviewText.value = evt.text;
+    reviewBox.hidden = false;
+    reviewText.focus();
+    var ends = Date.now() + (evt.timeoutMs || 20000);
+    var tick = function () {
+      var left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
+      $('[data-review-countdown]').textContent = 'Sends as it is in ' + left + 's';
+    };
+    clearInterval(reviewCountdown); tick(); reviewCountdown = setInterval(tick, 1000);
+  }
+  function hideReview() {
+    currentReview = null;
+    clearInterval(reviewCountdown); reviewCountdown = null;
+    reviewBox.hidden = true;
+  }
+  // The agent answers the approved text, so when the caller changed it the
+  // transcript's last line from them shows the edited version.
+  function applyReviewedText(reviewId, text) {
+    var original = reviewOriginals[reviewId];
+    delete reviewOriginals[reviewId];
+    if (original == null || original === text) return;
+    for (var i = state.transcript.length - 1; i >= 0; i--) {
+      if (state.transcript[i][0] !== 'you') continue;
+      state.transcript[i][2] = text + ' (edited)';
+      renderTranscript();
+      setCaption('you', text);
+      break;
+    }
+  }
+  function sendReview() {
+    if (!currentReview || !activeCallId) return;
+    var id = currentReview, text = reviewText.value.trim();
+    hideReview();
+    fetch('/api/calls/' + activeCallId + '/review/' + id, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text })
+    }).catch(function (err) { console.error('review: could not send', err); });
+  }
+  reviewText.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendReview(); }
+  });
+
   /* ---------- Timer ---------- */
   var timerId = null;
   function renderTimer() { $('[data-call-timer]').textContent = fmt(state.seconds); }
@@ -808,6 +876,11 @@
             setOutcome('status', true);
           }
         }
+      } else if (evt.type === 'review_requested') {
+        showReview(evt);
+      } else if (evt.type === 'review_sent') {
+        if (evt.reviewId === currentReview) hideReview();
+        applyReviewedText(evt.reviewId, evt.text);
       } else if (evt.type === 'end_call') {
         requestHangup();
       } else if (evt.type === 'contact_form_requested') {
@@ -865,6 +938,7 @@
       setState('live', { focus: true });
     });
     vapi.on('call-end', function () {
+      hideReview();
       cancelHangup();
       closeCallEventStream();
       activeVapi = null;
@@ -916,6 +990,11 @@
     });
   }
 
+  var GREETING =
+    "Hi, I'm RelayPay's AI support assistant. I can answer questions about payments, fees and invoicing, " +
+    "check on a transaction or payout once I've verified your account, and arrange a callback with a specialist. " +
+    "How can I help today?";
+
   function connectRealCall() {
     Promise.all([loadVapiConfig(), loadVapiSdk()]).then(function (results) {
       var cfg = results[0], Vapi = results[1];
@@ -926,12 +1005,17 @@
       // it — that id is what the custom-LLM endpoint and callEvents stream
       // key on, so subscribe as soon as it's known rather than waiting for
       // 'call-start' (which carries no payload).
-      return activeVapi.start(cfg.vapiAssistantId);
+      // The greeting: says it's an AI assistant and what it can do, so the
+      // caller knows from the first second. Set here rather than only in the
+      // Vapi dashboard, so it's versioned with the code.
+      return activeVapi.start(cfg.vapiAssistantId, { firstMessage: GREETING });
     }).then(function (call) {
       activeCallId = call && call.id;
       if (activeCallId) {
         subscribeToCallEvents(activeCallId);
         linkSignedInCaller(activeCallId);
+        // The switch may have been turned on before the call id existed.
+        if (reviewOn) postReviewMode();
       }
     }).catch(function () {
       setState('error-connection', { focus: true });
@@ -947,6 +1031,8 @@
       case 'cancel': clearDemo(); setState('idle', { focus: true }); break;
       case 'end-call': endCall(); break;
       case 'toggle-mute': setMuted(!state.muted); break;
+      case 'toggle-review': setReviewMode(!reviewOn); break;
+      case 'send-review': sendReview(); break;
       case 'open-transcript': openTranscript(); break;
       case 'close-transcript': closeTranscript(); break;
       case 'use-different-email':

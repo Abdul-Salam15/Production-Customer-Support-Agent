@@ -15,7 +15,8 @@ RelayPay's support line is a voice agent you talk to in the browser. It answers 
 
 ## What happens on a call
 
-1. The caller speaks. Vapi transcribes it and sends the text to the agent backend.
+1. The agent opens by saying it's RelayPay's AI support assistant and what it can help with. The caller speaks. Vapi transcribes it and sends the text to the agent backend.
+   - With **Review before sending** switched on (next to Mute), the caller's words first appear in an editable box. The agent waits until they press Send, or answers the original words after 20 seconds.
 2. The agent picks a response path (below) and calls whatever MCP tools it needs. Each tool call is logged to `tool_calls`.
 3. Its reply passes through safety layers before Vapi speaks it:
    - an output guard that blocks leaked emails, amounts or internal notes;

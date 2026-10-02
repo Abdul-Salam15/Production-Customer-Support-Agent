@@ -10,6 +10,7 @@ import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
 import { speakReferences } from "./spokenReferences.js";
 import { NarrationFilter } from "./narrationFilter.js";
 import { PreToolGate } from "./preToolGate.js";
+import { needsReview, awaitReview } from "./review.js";
 
 interface VapiMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -313,22 +314,6 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   // Usually already started by the "in-progress" status-update webhook, so
   // this resolves immediately instead of paying for SDK startup here.
   const agent = await getOrCreateCallAgent(callId);
-  // search_knowledge_base also searches with the caller's own words (the
-  // model's rewritten query sometimes misses), so store them for this turn.
-  await getSupabaseClient()
-    .from("conversations")
-    .update({ current_utterance: userMessage.content.slice(0, 1000) })
-    .eq("conversation_id", agent.conversationId)
-    .then(({ error }) => {
-      if (error) console.error("customLlm: failed to store current utterance", error.message);
-    });
-  const utterance = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
-  const notes = agent.takeNotes();
-  const prompt = notes.length > 0 ? `${notes.join("\n")}\n\n${utterance}` : utterance;
-
-  const conversationId = agent.conversationId;
-  const guardContext = await buildGuardContext(conversationId, userMessage.content);
-  const guard = new OutputGuard(guardContext);
 
   // Vapi signals barge-in by dropping this HTTP connection. Interrupting
   // (rather than killing the session) stops generation for a reply nobody
@@ -345,6 +330,42 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders?.();
+
+  // Review before sending: hold the turn until the caller approves (or
+  // edits) what they said, then answer that text everywhere below — prompt,
+  // knowledge-base search, output guard and the logged transcript.
+  if (needsReview(callId, userMessage.content)) {
+    // SSE comments keep the connection to Vapi visibly alive while waiting;
+    // OpenAI-style stream parsers ignore them.
+    const keepAlive = setInterval(() => {
+      if (!res.writableEnded) res.write(": waiting for the caller to review\n\n");
+    }, 5_000);
+    const approved = await awaitReview(callId, userMessage.content, abortController.signal);
+    clearInterval(keepAlive);
+    if (approved === null) {
+      // The caller spoke again before sending; Vapi starts a new turn that
+      // carries this text forward.
+      if (!res.writableEnded) res.end();
+      return;
+    }
+    userMessage.content = approved;
+  }
+  // search_knowledge_base also searches with the caller's own words (the
+  // model's rewritten query sometimes misses), so store them for this turn.
+  await getSupabaseClient()
+    .from("conversations")
+    .update({ current_utterance: userMessage.content.slice(0, 1000) })
+    .eq("conversation_id", agent.conversationId)
+    .then(({ error }) => {
+      if (error) console.error("customLlm: failed to store current utterance", error.message);
+    });
+  const utterance = agent.turnsSent === 0 ? buildPromptFromHistory(body.messages) : userMessage.content;
+  const notes = agent.takeNotes();
+  const prompt = notes.length > 0 ? `${notes.join("\n")}\n\n${utterance}` : utterance;
+
+  const conversationId = agent.conversationId;
+  const guardContext = await buildGuardContext(conversationId, userMessage.content);
+  const guard = new OutputGuard(guardContext);
 
   const chunkId = newChunkId();
   const modelName = body.model ?? env.ANTHROPIC_MODEL;
