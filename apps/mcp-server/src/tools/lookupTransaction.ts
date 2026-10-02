@@ -22,6 +22,18 @@ function recommendedActionFor(status: string): "none" | "ticket" | "escalate" {
 async function handle(args: LookupTransactionArgs, ctx: ToolContext): Promise<Record<string, unknown>> {
   const supabase = getSupabaseClient();
 
+  // Nothing about a record is shared until the caller is verified — not
+  // even its status. Checked before the query, so an unverified caller
+  // can't learn whether a reference exists either.
+  const verifiedCustomerId = await getVerifiedCustomerId(supabase, ctx.conversationId);
+  if (!verifiedCustomerId) {
+    return {
+      found: false,
+      verification_required: true,
+      guidance: "Verify the caller first (their account email plus name or company), then look this up again.",
+    };
+  }
+
   const { data, error } = await supabase
     .from("transactions")
     .select("*")
@@ -31,20 +43,16 @@ async function handle(args: LookupTransactionArgs, ctx: ToolContext): Promise<Re
   if (error) throw new Error(`transactions query failed: ${error.message}`);
   if (!data) return { found: false };
 
-  const verifiedCustomerId = await getVerifiedCustomerId(supabase, ctx.conversationId);
   if (isOwnershipViolation(data.customer_id, verifiedCustomerId)) {
     return { found: false };
   }
 
-  // A bare reference from an unverified caller is reference-only: the model
-  // never receives the amount or whose transaction it is, so it can't read
-  // them out (the output guard is a backstop, not the only barrier).
-  const verified = verifiedCustomerId !== null;
-
   return {
     found: true,
     transaction_id: data.transaction_id,
-    ...(verified ? { customer_id: data.customer_id, amount: data.amount, currency: data.currency } : {}),
+    customer_id: data.customer_id,
+    amount: data.amount,
+    currency: data.currency,
     type: data.transaction_type,
     status: data.status,
     estimated_arrival: data.estimated_arrival,

@@ -26,6 +26,19 @@ async function handle(args: LookupPayoutArgs, ctx: ToolContext): Promise<Record<
   if (!payout_id && !transaction_id) return { found: false };
 
   const supabase = getSupabaseClient();
+
+  // Nothing about a record is shared until the caller is verified — not
+  // even its status. Checked before the query, so an unverified caller
+  // can't learn whether a reference exists either.
+  const verifiedCustomerId = await getVerifiedCustomerId(supabase, ctx.conversationId);
+  if (!verifiedCustomerId) {
+    return {
+      found: false,
+      verification_required: true,
+      guidance: "Verify the caller first (their account email plus name or company), then look this up again.",
+    };
+  }
+
   let query = supabase.from("payouts").select("*");
   query = payout_id ? query.eq("payout_id", payout_id) : query.eq("transaction_id", transaction_id as string);
 
@@ -33,7 +46,6 @@ async function handle(args: LookupPayoutArgs, ctx: ToolContext): Promise<Record<
   if (error) throw new Error(`payouts query failed: ${error.message}`);
   if (!data) return { found: false };
 
-  const verifiedCustomerId = await getVerifiedCustomerId(supabase, ctx.conversationId);
   if (isOwnershipViolation(data.customer_id, verifiedCustomerId)) {
     return { found: false };
   }

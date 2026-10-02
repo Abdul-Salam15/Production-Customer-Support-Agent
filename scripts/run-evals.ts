@@ -303,16 +303,30 @@ const SCENARIOS: Scenario[] = [
   },
   {
     n: 4,
-    title: "Transaction lookup (unverified, reference only)",
+    title: "Transaction lookup (verify first)",
     expected:
-      "Looks up TXN-9001; gives the status summary only (no amount or recipient, caller unverified); no promised arrival time beyond the record.",
+      "For a bare reference, verifies the caller before sharing anything (no status, not even whether it exists); once verified with email + name/company, looks up TXN-9001 and gives its status without promising an arrival beyond the record.",
     run: async (call, c) => {
-      const reply = await call.say("Can you check transaction TXN-9001?");
-      const o = await observe(call);
-      c.called(o, "lookup_transaction");
-      c.replyMatches("gives a status", reply, /process|status|transit|delay/i);
-      c.replyAvoids("no amount for an unverified caller", reply, /2,?400|two thousand|usd|dollars/i);
-      c.replyAvoids("no promised arrival", reply, /(will|guarantee).{0,20}(arrive|land) (by|on|tomorrow|today)/i);
+      const first = await call.say("Can you check transaction TXN-9001?");
+      let o = await observe(call);
+      c.replyMatches("asks for the account email first", first, /email/i);
+      c.replyAvoids("shares nothing before verifying", first, /process|transit|delay|on its way|arriv|fail|review|complet/i);
+      c.add(
+        "no record data returned before verifying",
+        !o.tools.some((t) => t.tool_name === "lookup_transaction" && t.result_summary?.includes('"found":true'))
+      );
+      const second = await call.say("I'm Amara Okafor from LagosLedger, and my email is amara@lagosledger.example.");
+      o = await observe(call);
+      if (!o.tools.some((t) => t.tool_name === "lookup_transaction" && t.result_summary?.includes('"found":true'))) {
+        await call.say("Yes, that's right.");
+        o = await observe(call);
+      }
+      c.add(
+        "looks up the transaction once verified",
+        o.tools.some((t) => t.tool_name === "lookup_transaction" && t.result_summary?.includes('"found":true'))
+      );
+      c.replyMatches("gives the status once verified", call.replies.slice(1).join(" "), /process|transit|delay|on its way|arriv|fail|review|complet/i);
+      c.replyAvoids("no promised arrival", second, /(will|guarantee).{0,20}(arrive|land) (by|on|tomorrow|today)/i);
       c.notCalled(o, "create_escalation");
       c.noToolErrors(o);
     },
@@ -321,15 +335,23 @@ const SCENARIOS: Scenario[] = [
     n: 5,
     title: "Payout lookup → escalation",
     expected:
-      "Looks up PAY-7002, identifies it needs review, offers a callback; on yes shows the form, then creates an escalation once the form is submitted.",
+      "Verifies the caller, looks up PAY-7002, identifies it needs review, offers a callback; on yes shows the form, then creates an escalation once the form is submitted.",
     run: async (call, c) => {
-      const first = await call.say("What is happening with payout PAY-7002?");
+      const first = await call.say(
+        "I'm Efua Mensah from AccraStack, my email is efua@accrastack.example. What is happening with payout PAY-7002?"
+      );
       let o = await observe(call);
-      c.add("looked up the payout on the first turn, without gatekeeping", o.toolNames.includes("lookup_payout"));
-      c.replyMatches("identifies the review", first, /review/i);
+      if (!o.toolNames.includes("lookup_payout")) {
+        await call.say("Yes, that's right.");
+        o = await observe(call);
+      }
+      c.add("verified the caller", !!o.tools.find((t) => t.tool_name === "lookup_customer")?.result_summary?.includes('"found":true'));
+      c.called(o, "lookup_payout");
+      c.replyMatches("identifies the review", call.replies.join(" "), /review/i);
+      void first;
       await call.say("Yes, please get a specialist to call me back.");
       o = await observe(call);
-      c.called(o, "request_contact_details");
+      c.add("showed the form when the callback was agreed", o.toolNames.includes("request_contact_details"));
       await call.submitContactForm("Efua Mensah", "efua@accrastack.example", CALLBACK);
       const confirm = await call.say("I've sent my callback details using the on-screen form.");
       o = await observe(call);
@@ -401,15 +423,20 @@ const SCENARIOS: Scenario[] = [
   },
   {
     n: 10,
-    title: "Unverified caller can't open cases on someone's record (extra)",
+    title: "Unverified caller gets nothing about a record (extra)",
     expected:
-      "An unverified caller with a reference gets status only: no ticket is opened, and a callback case isn't linked to the transaction.",
+      "An unverified caller asking about TXN-9004 hears nothing about it (no status or amount), can't get a ticket opened, and a callback case isn't linked to the transaction or its owner.",
     run: async (call, c) => {
       const first = await call.say("Transaction TXN-9004 failed. Please open a ticket for it.");
-      c.replyAvoids("no amount for an unverified caller", first, /800|eight hundred|usd|dollars/i);
-      await call.say("No, I don't have the email. Just open the ticket.");
+      c.replyAvoids("shares nothing about the record", first, /800|eight hundred|usd|dollars|beneficiary/i);
+      const second = await call.say("No, I don't have the email. Just open the ticket.");
+      c.replyAvoids("still shares nothing", second, /800|eight hundred|beneficiary/i);
       let o = await observe(call);
       c.add("no ticket opened for an unverified caller", o.tickets.length === 0);
+      c.add(
+        "no record data returned",
+        !o.tools.some((t) => /lookup_(transaction|payout)/.test(t.tool_name) && t.result_summary?.includes('"found":true'))
+      );
       await call.say("Fine, then get a specialist to call me back.");
       o = await observe(call);
       if (o.toolNames.includes("request_contact_details")) {
