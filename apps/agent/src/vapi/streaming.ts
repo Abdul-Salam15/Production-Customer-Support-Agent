@@ -3,12 +3,22 @@ import { randomUUID } from "node:crypto";
 
 // Matches the leading [path=...;confidence=...] tag the system prompt
 // requires on every response. Vapi must never see it.
-const TAG_RE = /^\[path=(answer|clarify|escalate|decline);confidence=(high|low|uncertain)\]\s*/i;
+// Appended by the backend — never written by the model — to the agent's
+// last reply when it ends the call. It must match, exactly, the phrase in the
+// Vapi assistant's "End Call Phrases": Vapi hangs up once it's been spoken.
+// Because only code ever produces it, the model can't end a call by
+// accident with a stray "goodbye".
+export const END_CALL_PHRASE = "Thank you for calling RelayPay. Goodbye.";
+
+// Optional ";end_call=true" means the caller is done and the agent's reply
+// is its goodbye — the browser hangs up once that reply has been spoken.
+const TAG_RE = /^\[path=(answer|clarify|escalate|decline);confidence=(high|low|uncertain)(?:;end_call=(true|false))?\]\s*/i;
 const MAX_TAG_LOOKAHEAD = 100;
 
 export interface ParsedTag {
   answerType: string | null;
   confidence: string | null;
+  endCall: boolean;
 }
 
 // Buffers just enough of the start of the stream to detect and strip the
@@ -17,7 +27,7 @@ export interface ParsedTag {
 export function createTagStrippingBuffer() {
   let buffer = "";
   let resolved = false;
-  let tag: ParsedTag = { answerType: null, confidence: null };
+  let tag: ParsedTag = { answerType: null, confidence: null, endCall: false };
 
   return {
     push(deltaText: string): string {
@@ -28,7 +38,7 @@ export function createTagStrippingBuffer() {
 
       if (match) {
         resolved = true;
-        tag = { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase() };
+        tag = { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase(), endCall: match[3]?.toLowerCase() === "true" };
         return buffer.slice(match[0].length);
       }
 
@@ -50,7 +60,7 @@ export function createTagStrippingBuffer() {
       resolved = true;
       const match = buffer.match(TAG_RE);
       if (match) {
-        tag = { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase() };
+        tag = { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase(), endCall: match[3]?.toLowerCase() === "true" };
         return buffer.slice(match[0].length);
       }
       return buffer;
@@ -65,10 +75,10 @@ export function createTagStrippingBuffer() {
 // conversation_turns row, where we have the whole text at once).
 export function stripTag(fullText: string): { text: string; tag: ParsedTag } {
   const match = fullText.match(TAG_RE);
-  if (!match) return { text: fullText, tag: { answerType: null, confidence: null } };
+  if (!match) return { text: fullText, tag: { answerType: null, confidence: null, endCall: false } };
   return {
     text: fullText.slice(match[0].length),
-    tag: { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase() },
+    tag: { answerType: match[1].toLowerCase(), confidence: match[2].toLowerCase(), endCall: match[3]?.toLowerCase() === "true" },
   };
 }
 

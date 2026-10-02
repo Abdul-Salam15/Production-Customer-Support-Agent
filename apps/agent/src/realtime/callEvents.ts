@@ -9,6 +9,8 @@ export type CallEvent =
   | { type: "activity"; key: string }
   | { type: "outcome"; card: OutcomeCard }
   | { type: "contact_form_requested" }
+  // The agent said goodbye; the browser hangs up once it finishes speaking.
+  | { type: "end_call" }
   | { type: "contact_details_received"; note: string };
 
 export interface OutcomeCard {

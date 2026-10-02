@@ -804,6 +804,8 @@
             setOutcome('status', true);
           }
         }
+      } else if (evt.type === 'end_call') {
+        requestHangup();
       } else if (evt.type === 'contact_form_requested') {
         // Without a known on-file email, ask for one rather than show a blank.
         showContactForm(state.outcomes.verified && ON_FILE_EMAIL ? 'verified' : 'standard');
@@ -827,22 +829,54 @@
     }).catch(function (err) { console.error('could not link the signed-in account to this call', err); });
   }
 
+  // Backstop only: normally Vapi hangs up by itself on the sign-off phrase
+  // (its "End Call Phrases" setting). The agent ends the call by tagging its
+  // goodbye; the backend relays that as an end_call event. Hang up only after the goodbye has been spoken, and
+  // not at all if the caller starts talking again or the contact form is
+  // open (they're mid-way through something).
+  var hangupPending = false, hangupTimer = null, hangupFallback = null;
+  function cancelHangup() {
+    hangupPending = false;
+    clearTimeout(hangupTimer); clearTimeout(hangupFallback);
+  }
+  function scheduleHangup(delay) {
+    clearTimeout(hangupTimer);
+    hangupTimer = setTimeout(function () {
+      if (!hangupPending || !activeVapi || !cf.hidden) return;
+      cancelHangup();
+      activeVapi.stop(); // 'call-end' moves the page to the ended state
+    }, delay);
+  }
+  function requestHangup() {
+    hangupPending = true;
+    // If the goodbye already finished, or speech-end never fires, still end.
+    if (state.mode !== 'speaking') scheduleHangup(2500);
+    clearTimeout(hangupFallback);
+    hangupFallback = setTimeout(function () { scheduleHangup(0); }, 8000);
+  }
+
   function bindVapiEvents(vapi) {
     vapi.on('call-start', function () {
       markCallStarted(new Date());
       setState('live', { focus: true });
     });
     vapi.on('call-end', function () {
+      cancelHangup();
       closeCallEventStream();
       activeVapi = null;
       setState('ended', { focus: true });
     });
     vapi.on('error', function () { setState('error-connection', { focus: true }); });
     vapi.on('speech-start', function () { setLiveMode('speaking'); });
-    vapi.on('speech-end', function () { setLiveMode('listening'); });
+    vapi.on('speech-end', function () {
+      setLiveMode('listening');
+      // The goodbye just finished playing — leave a beat, then hang up.
+      if (hangupPending) scheduleHangup(1200);
+    });
     vapi.on('message', function (msg) {
       if (!msg || msg.type !== 'transcript') return;
       var who = msg.role === 'assistant' ? 'agent' : 'you';
+      if (who === 'you' && hangupPending) cancelHangup(); // they have more to say
       setCaption(who, msg.transcript);
       if (msg.transcriptType === 'final') addTranscriptLine(who, msg.transcript);
     });

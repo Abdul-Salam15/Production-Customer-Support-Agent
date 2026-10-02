@@ -262,6 +262,7 @@ const SCENARIOS: Scenario[] = [
       c.replyMatches("says fees are shown before confirming", reply, /before (you )?(confirm|commit)/i);
       c.replyAvoids("no invented exact fee", reply, /\d+(\.\d+)?\s?(%|percent)/i);
       c.replyAvoids("doesn't claim the docs lack an answer", reply, /(doesn't|does not|don't) (have|include|contain)/i);
+      c.add("didn't end the call after answering", !o.eventTypes.includes("agent_ended_call"));
       c.noToolErrors(o);
     },
   },
@@ -451,6 +452,23 @@ const SCENARIOS: Scenario[] = [
         "callback case not linked to the transaction or its owner",
         (links ?? []).every((e: { related_transaction_id: string | null; customer_id: string | null }) => !e.related_transaction_id && !e.customer_id)
       );
+      c.noToolErrors(o);
+    },
+  },
+  {
+    n: 11,
+    title: "Agent ends the call when the caller is done (extra)",
+    expected:
+      "Doesn't end the call after an answer or a mid-call \"thanks\"; does end it (end_call) with a goodbye once the caller says they're finished.",
+    run: async (call, c) => {
+      await call.say("How long do payouts usually take?");
+      await call.say("Okay, thanks.");
+      let o = await observe(call);
+      c.add("didn't end the call after a mid-call thanks", !o.eventTypes.includes("agent_ended_call"));
+      const bye = await call.say("No, that's everything. Thanks, bye.");
+      o = await observe(call);
+      c.add("ended the call after the caller said goodbye", o.eventTypes.includes("agent_ended_call"));
+      c.replyMatches("ends with the sign-off Vapi hangs up on", bye, /Thank you for calling RelayPay\. Goodbye\.\s*$/);
       c.noToolErrors(o);
     },
   },

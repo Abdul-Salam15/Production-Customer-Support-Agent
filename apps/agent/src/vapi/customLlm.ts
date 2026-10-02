@@ -4,7 +4,7 @@ import { getEnv } from "../env.js";
 import { getSupabaseClient } from "../supabaseClient.js";
 import { getOrCreateCallAgent, type CallAgent } from "../session/agentSession.js";
 import { createAbortController } from "../session/abort.js";
-import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChunkId } from "./streaming.js";
+import { createTagStrippingBuffer, stripTag, writeSseChunk, writeSseDone, newChunkId, END_CALL_PHRASE } from "./streaming.js";
 import { OutputGuard, extractInternalPhrases, logGuardBlock, type GuardContext } from "../outputGuard.js";
 import { publishCallEvent, type CallEvent } from "../realtime/callEvents.js";
 import { speakReferences } from "./spokenReferences.js";
@@ -355,7 +355,7 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
   // aren't spoken as "fees.RelayPay".
   let tagBuffer = createTagStrippingBuffer();
   const narration = new NarrationFilter();
-  let streamedTag: ReturnType<typeof tagBuffer.getTag> = { answerType: null, confidence: null };
+  let streamedTag: ReturnType<typeof tagBuffer.getTag> = { answerType: null, confidence: null, endCall: false };
   let spokenSoFar = "";
   let needsSeparator = false;
   let firstSpokenAt: Date | null = null;
@@ -371,9 +371,13 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
     writeSseChunk(res, modelName, chunkId, out);
   };
   const gate = new PreToolGate(speak);
+  // Any text block of the turn may carry end_call=true (in a tool-using turn
+  // the final block's tag isn't the first one), so track it separately.
+  let endCallTagged = false;
   const rememberTag = () => {
     const tag = tagBuffer.getTag();
     if (tag.answerType && !streamedTag.answerType) streamedTag = tag;
+    if (tag.endCall) endCallTagged = true;
   };
 
   let finalText = "";
@@ -450,6 +454,11 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
       gate.push(narration.push(guard.flushRemaining()));
       gate.push(narration.flush());
       gate.flush();
+      rememberTag();
+      // The sign-off Vapi's End Call Phrases listen for: Vapi hangs up once
+      // it's spoken. Skipped if the reply was interrupted or the guard
+      // replaced it with the fallback line.
+      if (endCallTagged && !interrupted && !guard.wasTripped()) speak(` ${END_CALL_PHRASE}`);
       writeSseDone(res, modelName, chunkId);
     }
     rememberTag();
@@ -475,6 +484,24 @@ async function handleTurn(req: Request, res: Response): Promise<void> {
         turnStartedAt,
         firstSpokenAt ?? new Date()
       );
+      // The goodbye was heard in full (an interrupted turn never gets here),
+      // so tell the browser to hang up once it's done speaking. A
+      // tool-using turn only counts if the tag says so on its final text.
+      if (endCallTagged || tag.endCall) {
+        publishCallEvent(callId, { type: "end_call" });
+        void getSupabaseClient()
+          .from("conversation_events")
+          .insert({
+            conversation_id: conversationId,
+            event_type: "agent_ended_call",
+            summary: "The agent ended the call after the caller said they were done.",
+            metadata: { source: "server" },
+          })
+          .then(({ error }) => {
+            if (error) console.error("customLlm: failed to record end-call event", error.message);
+          });
+      }
+
       // Recorded by the server, not left to the model: a decline is what the
       // support team reviews to find gaps in the knowledge base.
       if (tag.answerType === "decline") {
