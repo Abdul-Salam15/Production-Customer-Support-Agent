@@ -6,6 +6,9 @@
 
   var CURRENT_USER = null;
   var CASES = [];
+  // 'loading' until the first fetch returns, so a refresh doesn't flash
+  // "No open cases right now" with 0 counts while the request is in flight.
+  var loadState = 'loading';
   var TOOL_CALLS = [];
   var toolCallsTimer = null;
   var toolCallsFor = null;
@@ -92,6 +95,15 @@
   function renderQueue() {
     var list = visibleCases();
     var q = $('[data-queue]');
+    if (loadState === 'loading') {
+      q.innerHTML = '<div class="queue-empty" role="status"><p class="queue-empty__text">Loading cases…</p></div>';
+      return;
+    }
+    if (loadState === 'error' && !CASES.length) {
+      q.innerHTML = '<div class="queue-empty" role="alert"><p class="queue-empty__title">Couldn&rsquo;t load cases.</p>' +
+        '<p class="queue-empty__text">Check your connection, then refresh the page.</p></div>';
+      return;
+    }
     if (!list.length) {
       var pr = ui.priority === 'all' ? '' : ui.priority + '-priority ';
       var catTxt = ui.category === 'all' ? '' : ' in ' + ui.category;
@@ -109,9 +121,10 @@
     };
     var open = CASES.filter(function (c) { return cat(c) && (isOpen(c) || ui.pendingClose[c.reference]); }).length;
     var closed = CASES.filter(function (c) { return cat(c) && c.status === 'closed'; }).length;
-    $('[data-count="open"]').textContent = open;
-    $('[data-count="closed"]').textContent = closed;
-    $('[data-count="all"]').textContent = CASES.filter(cat).length;
+    var pending = loadState === 'loading';
+    $('[data-count="open"]').textContent = pending ? '–' : open;
+    $('[data-count="closed"]').textContent = pending ? '–' : closed;
+    $('[data-count="all"]').textContent = pending ? '–' : CASES.filter(cat).length;
   }
 
   /* ---------- Detail ---------- */
@@ -200,7 +213,8 @@
     var pane = $('[data-detail]');
     var c = ui.selected && find(ui.selected);
     if (!c) {
-      pane.innerHTML = '<div class="detail-empty"><p class="detail-empty__text">Select a case to see the details.</p></div>';
+      pane.innerHTML = loadState === 'loading' ? '' :
+        '<div class="detail-empty"><p class="detail-empty__text">Select a case to see the details.</p></div>';
       return;
     }
     var statusKey = c.status;
@@ -265,9 +279,11 @@
       CASES.splice(0, CASES.length);
       Array.prototype.push.apply(CASES, data.cases);
       if (ui.selected && !find(ui.selected)) ui.selected = null;
+      loadState = 'loaded';
       render();
     } catch (e) {
       console.error('Failed to load cases', e);
+      if (loadState === 'loading') { loadState = 'error'; render(); }
     }
   }
 
