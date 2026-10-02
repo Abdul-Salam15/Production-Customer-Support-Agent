@@ -190,9 +190,32 @@
   }
 
   var CALLS = [];
+  // 'loading' until the first fetch settles, so a refresh shows a loading
+  // message instead of a blank list (loadState matches queue.js's pattern).
+  var loadState = 'loading';
   function renderHistory() {
     var list = $('[data-history-list]'), empty = $('[data-history-empty]');
-    if (!CALLS.length) { list.innerHTML = ''; empty.hidden = false; return; }
+    if (loadState === 'loading') {
+      list.innerHTML = '';
+      empty.hidden = false;
+      empty.textContent = 'Loading your calls…';
+      empty.setAttribute('role', 'status');
+      return;
+    }
+    if (loadState === 'error' && !CALLS.length) {
+      list.innerHTML = '';
+      empty.hidden = false;
+      empty.textContent = "Couldn't load your calls. Check your connection, then refresh the page.";
+      empty.setAttribute('role', 'alert');
+      return;
+    }
+    empty.removeAttribute('role');
+    if (!CALLS.length) {
+      list.innerHTML = '';
+      empty.hidden = false;
+      empty.textContent = 'No calls yet. Calls you make will show here.';
+      return;
+    }
     empty.hidden = true;
     list.innerHTML = CALLS.map(rowHTML).join('');
   }
@@ -217,13 +240,16 @@
 
   async function loadHistory(account) {
     $('[data-account-name]').textContent = account.fullName || account.email;
+    renderHistory(); // shows "Loading your calls…" immediately
     try {
       var data = await api('/api/customer/calls');
       CALLS = data.calls;
-      renderHistory();
+      loadState = 'loaded';
     } catch (e) {
       console.error('Failed to load call history', e);
+      loadState = 'error';
     }
+    renderHistory();
   }
 
   $('[data-action="log-out"]').addEventListener('click', async function () {

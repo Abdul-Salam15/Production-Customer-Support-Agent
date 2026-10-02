@@ -982,8 +982,9 @@
     vapi.on('speech-start', function () { setLiveMode('speaking'); });
     vapi.on('speech-end', function () {
       setLiveMode('listening');
-      // The goodbye just finished playing — leave a beat, then hang up.
-      if (hangupPending) scheduleHangup(1200);
+      // The goodbye just finished playing — wait 2s before hanging up, so it
+      // doesn't feel like the call was cut off right on the last word.
+      if (hangupPending) scheduleHangup(2000);
     });
     vapi.on('message', function (msg) {
       if (!msg || msg.type !== 'transcript') return;
