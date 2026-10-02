@@ -263,6 +263,11 @@
 
   function setMuted(on) {
     state.muted = !!on;
+    // Actually stop sending the microphone to Vapi; the button alone only
+    // changed the label, so the agent kept hearing and transcribing.
+    if (activeVapi) {
+      try { activeVapi.setMuted(state.muted); } catch (err) { console.error('mute: Vapi rejected setMuted', err); }
+    }
     var btn = $('[data-action="toggle-mute"]');
     btn.setAttribute('aria-pressed', state.muted);
     $('[data-mute-label]').textContent = state.muted ? 'Unmute' : 'Mute';
@@ -961,6 +966,8 @@
 
   function bindVapiEvents(vapi) {
     vapi.on('call-start', function () {
+      // Mute pressed while the call was still connecting.
+      if (state.muted) { try { vapi.setMuted(true); } catch (err) { console.error('mute: could not apply on start', err); } }
       markCallStarted(new Date());
       setState('live', { focus: true });
     });
@@ -981,6 +988,8 @@
     vapi.on('message', function (msg) {
       if (!msg || msg.type !== 'transcript') return;
       var who = msg.role === 'assistant' ? 'agent' : 'you';
+      // Speech that was mid-transcription when the caller pressed Mute.
+      if (who === 'you' && state.muted) return;
       if (who === 'you' && hangupPending) cancelHangup(); // they have more to say
       setCaption(who, msg.transcript);
       if (msg.transcriptType === 'final') addTranscriptLine(who, msg.transcript);
